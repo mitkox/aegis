@@ -1,11 +1,17 @@
 #![forbid(unsafe_code)]
 
+//! NuGet package operation planning for Aegis.
+//!
+//! Generates read-only operation plans using `dotnet nuget search`.
+//! Never runs `dotnet add package` or `nuget install`.
+
 use aegis_core::{has_shell_metacharacters, push_unique, OperationPlan, Tool};
 use anyhow::{anyhow, Result};
 use regex::Regex;
 use serde_json::{json, Value};
 use std::process::Command;
 
+/// Validate a NuGet package ID against allowed characters.
 pub fn validate_nuget_package_id(package: &str) -> Result<()> {
     if package.is_empty()
         || package.contains(char::is_whitespace)
@@ -21,6 +27,7 @@ pub fn validate_nuget_package_id(package: &str) -> Result<()> {
     }
 }
 
+/// Create an operation plan for installing a NuGet package.
 pub fn plan_install(package: &str) -> Result<OperationPlan> {
     validate_nuget_package_id(package)?;
     let mut plan = base_plan(package);
@@ -44,7 +51,6 @@ pub fn plan_install(package: &str) -> Result<OperationPlan> {
         }
         Err(err) => return Err(err.into()),
     }
-    add_name_risks(&mut plan, package);
     Ok(plan)
 }
 
@@ -89,6 +95,7 @@ fn add_name_risks(plan: &mut OperationPlan, package: &str) {
     }
 }
 
+/// Enrich a plan with risk signals from NuGet package metadata.
 pub fn enrich_plan_from_metadata(plan: &mut OperationPlan, metadata: &Value) {
     let raw = metadata.to_string().to_ascii_lowercase();
     if raw.contains(".targets") || raw.contains(".props") || raw.contains("buildtransitive") {

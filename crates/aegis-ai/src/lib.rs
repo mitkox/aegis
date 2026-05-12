@@ -1,5 +1,11 @@
 #![forbid(unsafe_code)]
 
+//! AI review client for Aegis operation plans.
+//!
+//! Sends operation plans to a local OpenAI-compatible endpoint for risk
+//! classification. The model is advisory only — deterministic policy makes
+//! the final decision.
+
 use aegis_core::{AiReview, OperationPlan};
 use anyhow::{anyhow, Context, Result};
 use reqwest::blocking::Client;
@@ -12,14 +18,19 @@ pub const DEFAULT_BASE_URL: &str = "http://localhost:8000/v1";
 pub const DEFAULT_MODEL: &str = "deepseek-v4-flash";
 pub const DEFAULT_PREFILL_TOKENS_PER_SECOND: f64 = 330.0;
 pub const DEFAULT_DECODE_TOKENS_PER_SECOND: f64 = 17.0;
-pub const DEFAULT_MAX_OUTPUT_TOKENS: u16 = 1024;
+pub const DEFAULT_MAX_OUTPUT_TOKENS: u16 = 4096;
 pub const DEFAULT_MODEL_STARTUP_ALLOWANCE_SECS: u64 = 120;
 pub const DEFAULT_MIN_REVIEW_TIMEOUT_SECS: u64 = 300;
 pub const DEFAULT_MODELS_TIMEOUT_SECS: u64 = 15;
 
 const SYSTEM_PROMPT: &str = "Aegis local package/artifact risk reviewer. Do not execute commands, approve execution, or generate argv. Return exactly one compact JSON object as the whole response. Start with { and end with }. No markdown, prose, analysis, or chain of thought. Deterministic policy decides.";
 
+/// The outcome of an AI review request.
+///
+/// Callers must handle both variants — `Invalid` does not mean deny,
+/// but the review should not be silently ignored.
 #[derive(Debug)]
+#[must_use]
 pub enum ReviewOutcome {
     Valid(AiReview),
     Invalid { raw_response: String, error: String },
@@ -62,6 +73,10 @@ struct ResponseMessage {
     content: String,
 }
 
+/// Send an operation plan to the local model for risk review.
+///
+/// Returns [`ReviewOutcome::Valid`] with a parsed [`AiReview`] on success,
+/// or [`ReviewOutcome::Invalid`] if the model response could not be parsed.
 pub fn review_plan(plan: &OperationPlan) -> Result<ReviewOutcome> {
     let url = format!(
         "{}/chat/completions",
@@ -125,6 +140,7 @@ pub fn review_plan(plan: &OperationPlan) -> Result<ReviewOutcome> {
     }
 }
 
+/// Check that the local model endpoint is reachable.
 pub fn check_models_endpoint() -> Result<()> {
     let client = Client::builder()
         .timeout(configured_models_timeout())
@@ -140,6 +156,7 @@ pub fn check_models_endpoint() -> Result<()> {
     Ok(())
 }
 
+/// Check whether the configured model name is listed by the endpoint.
 pub fn check_default_model_available() -> Result<Option<bool>> {
     let client = Client::builder()
         .timeout(configured_models_timeout())
@@ -166,10 +183,12 @@ pub fn check_default_model_available() -> Result<Option<bool>> {
     })))
 }
 
+/// Return the configured base URL for the model endpoint.
 pub fn configured_base_url() -> String {
     env::var("AEGIS_AI_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string())
 }
 
+/// Return the configured model name.
 pub fn configured_model() -> String {
     env::var("AEGIS_AI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string())
 }
@@ -241,6 +260,7 @@ fn parse_review_json(raw: &str) -> Result<AiReview> {
     ))
 }
 
+/// Return the expected JSON shape for AI review responses.
 pub fn expected_review_shape() -> Value {
     json!({
         "risk": "low|medium|high|deny",
@@ -393,6 +413,10 @@ fn review_timeout_from_rates(
 }
 
 fn ceil_div_f64(value: f64, divisor: f64) -> u64 {
+    debug_assert!(
+        divisor > 0.0,
+        "ceil_div_f64 called with non-positive divisor"
+    );
     (value / divisor).ceil() as u64
 }
 

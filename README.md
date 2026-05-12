@@ -52,10 +52,10 @@ export AEGIS_AI_REVIEW_TIMEOUT_SECS=600
 
 If `AEGIS_AI_REVIEW_TIMEOUT_SECS` is unset, Aegis estimates the review timeout
 from prompt size, the configured token rates, and a startup allowance. Review
-responses are capped with `AEGIS_AI_MAX_OUTPUT_TOKENS` (default `1024`) to keep
-local JSON reviews bounded. OpenAI-compatible JSON response formatting is used
-by default; set `AEGIS_AI_RESPONSE_FORMAT_JSON=0` if your local endpoint rejects
-that option.
+responses are capped with `AEGIS_AI_MAX_OUTPUT_TOKENS` (default `4096`) to leave
+room for local reasoning-token overhead while keeping reviews bounded.
+OpenAI-compatible JSON response formatting is used by default; set
+`AEGIS_AI_RESPONSE_FORMAT_JSON=0` if your local endpoint rejects that option.
 
 One common setup is a vLLM-compatible server exposing the model name above:
 
@@ -69,6 +69,8 @@ vllm serve <local-or-hf-model-path> \
 Use the model path and vLLM flags appropriate for your local installation and hardware. Aegis checks `GET http://localhost:8000/v1/models` in `aegis doctor`.
 
 ## Commands
+
+Development (from repo root):
 
 ```bash
 cargo run -- doctor
@@ -86,6 +88,27 @@ cargo run -- cargo install ripgrep --plan
 cargo run -- review ~/.local/share/aegis/plans/<plan-id>.json
 cargo run -- policy ~/.local/share/aegis/plans/<plan-id>.json
 ```
+
+After `cargo install --path crates/aegis-cli`:
+
+```bash
+aegis doctor
+aegis apt upgrade --plan
+aegis npm install lodash --plan
+aegis review ~/.local/share/aegis/plans/<plan-id>.json
+aegis policy ~/.local/share/aegis/plans/<plan-id>.json
+```
+
+## Policy Configuration
+
+The policy engine loads configuration from (in priority order):
+
+1. `$AEGIS_POLICY_FILE` environment variable
+2. `$XDG_CONFIG_HOME/aegis/policy.toml`
+3. `$HOME/.config/aegis/policy.toml`
+4. `policies/default-policy.toml` (from the working directory)
+
+See `policies/default-policy.toml` for the available options.
 
 ## Development
 

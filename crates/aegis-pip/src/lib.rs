@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
 
+//! Pip package operation planning for Aegis.
+//!
+//! Generates read-only operation plans using `pip index versions` for
+//! metadata. Never runs `pip install`.
+
 use aegis_core::{
     denied_plan, has_shell_metacharacters, is_url_like, looks_like_local_path, push_unique,
     OperationPlan, Tool,
@@ -10,6 +15,7 @@ use serde_json::{json, Value};
 use std::env;
 use std::process::Command;
 
+/// Validate a pip package name against allowed characters.
 pub fn validate_pip_package_name(name: &str) -> Result<()> {
     if name.is_empty() {
         return Err(anyhow!("package name must not be empty"));
@@ -22,6 +28,7 @@ pub fn validate_pip_package_name(name: &str) -> Result<()> {
     }
 }
 
+/// Create an operation plan for `pip install <package>`.
 pub fn plan_install(package: &str) -> Result<OperationPlan> {
     if is_url_like(package) {
         return Ok(denied(
@@ -133,6 +140,7 @@ fn add_environment_risk(plan: &mut OperationPlan) {
     }
 }
 
+/// Enrich a plan with risk signals from pip package metadata.
 pub fn enrich_plan_from_metadata(plan: &mut OperationPlan, metadata: &Value) {
     if metadata
         .get("pyproject_toml")

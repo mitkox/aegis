@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
 
+//! Go module operation planning for Aegis.
+//!
+//! Generates read-only operation plans using `go env` and `go list -m -json`
+//! in a temporary cache directory. Never runs `go get`.
+
 use aegis_core::{
     has_shell_metacharacters, looks_like_local_path, push_unique, OperationPlan, Tool,
 };
@@ -8,7 +13,7 @@ use regex::Regex;
 use serde_json::{json, Value};
 use std::fs;
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]
 pub struct GoEnv {
@@ -18,6 +23,7 @@ pub struct GoEnv {
     pub gonosumdb: Option<String>,
 }
 
+/// Validate a Go module reference against allowed characters.
 pub fn validate_go_module(module: &str) -> Result<()> {
     if module.is_empty()
         || module.contains(char::is_whitespace)
@@ -35,6 +41,7 @@ pub fn validate_go_module(module: &str) -> Result<()> {
     }
 }
 
+/// Create an operation plan for `go get <module>`.
 pub fn plan_get(module: &str) -> Result<OperationPlan> {
     validate_go_module(module)?;
     let mut plan = base_plan(module);
@@ -132,15 +139,13 @@ fn collect_go_list(module: &str, plan: &mut OperationPlan) -> Result<()> {
 }
 
 fn temp_dir() -> Result<std::path::PathBuf> {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system time before UNIX epoch")?
-        .as_nanos();
+    let nonce = Uuid::new_v4();
     Ok(aegis_audit::cache_dir()?
         .join("tmp")
         .join(format!("go-{nonce}")))
 }
 
+/// Apply Go environment risk signals to a plan.
 pub fn apply_go_env_risks(plan: &mut OperationPlan, env_info: &GoEnv) {
     if env_info.gosumdb.as_deref() == Some("off") {
         push_unique(&mut plan.risk_signals, "gosumdb-disabled");

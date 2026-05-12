@@ -424,13 +424,36 @@ fn review(plan_file: &Path) -> Result<()> {
 fn policy(plan_file: &Path) -> Result<()> {
     aegis_audit::ensure_dirs()?;
     let plan = read_plan(plan_file)?;
-    let config = aegis_policy::load_policy_config("policies/default-policy.toml")?;
+    let config = aegis_policy::load_policy_config(resolve_policy_path())?;
     let result = aegis_policy::evaluate(&plan, &config);
     let filename = format!("{}.policy.json", plan.plan_id);
     let path = aegis_audit::write_json(aegis_audit::policy_dir()?, &filename, &result)?;
     println!("{}", serde_json::to_string_pretty(&result)?);
     println!("policy_path: {}", path.display());
     Ok(())
+}
+
+/// Resolve the policy configuration file path.
+///
+/// Priority: `$AEGIS_POLICY_FILE` > `$XDG_CONFIG_HOME/aegis/policy.toml`
+/// > `$HOME/.config/aegis/policy.toml` > `policies/default-policy.toml`.
+fn resolve_policy_path() -> PathBuf {
+    if let Ok(path) = std::env::var("AEGIS_POLICY_FILE") {
+        return PathBuf::from(path);
+    }
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        let path = PathBuf::from(xdg).join("aegis/policy.toml");
+        if path.exists() {
+            return path;
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let path = PathBuf::from(home).join(".config/aegis/policy.toml");
+        if path.exists() {
+            return path;
+        }
+    }
+    PathBuf::from("policies/default-policy.toml")
 }
 
 fn doctor() -> Result<()> {
@@ -517,12 +540,14 @@ fn doctor() -> Result<()> {
         ),
     }
 
-    match aegis_audit::check_writable(aegis_audit::data_dir()?) {
-        Ok(()) => println!("ok: can write {}", aegis_audit::data_dir()?.display()),
+    let data = aegis_audit::data_dir()?;
+    match aegis_audit::check_writable(data.clone()) {
+        Ok(()) => println!("ok: can write {}", data.display()),
         Err(err) => println!("error: cannot write data dir: {err}"),
     }
-    match aegis_audit::check_writable(aegis_audit::cache_dir()?) {
-        Ok(()) => println!("ok: can write {}", aegis_audit::cache_dir()?.display()),
+    let cache = aegis_audit::cache_dir()?;
+    match aegis_audit::check_writable(cache.clone()) {
+        Ok(()) => println!("ok: can write {}", cache.display()),
         Err(err) => println!("error: cannot write cache dir: {err}"),
     }
     Ok(())

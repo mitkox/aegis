@@ -95,6 +95,7 @@ dependencies = [
  "anyhow",
  "regex",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]

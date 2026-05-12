@@ -1,23 +1,41 @@
 #![forbid(unsafe_code)]
 
+//! Deterministic policy engine for Aegis operation plans.
+//!
+//! This crate evaluates an [`OperationPlan`] against a [`PolicyConfig`] and
+//! returns a [`PolicyResult`] with a decision, reasons, and required controls.
+//! The policy engine is fully deterministic — it never calls external services
+//! or uses AI judgement.
+
 use aegis_core::{has_shell_metacharacters, OperationPlan, PolicyDecision, PolicyResult, Tool};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
+/// Policy configuration loaded from a TOML file.
+///
+/// Currently only the `[apt]` section is supported. Other ecosystems use
+/// built-in defaults. See `policies/default-policy.toml` for the schema.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PolicyConfig {
+    /// Apt-specific policy settings.
     #[serde(default)]
     pub apt: AptPolicyConfig,
 }
 
+/// Apt-specific policy configuration.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AptPolicyConfig {
+    /// When `false` (default), any plan that removes apt packages is denied.
+    /// When `true`, removals require human approval instead of being denied.
     #[serde(default)]
     pub allow_removals: bool,
 }
 
+/// Load policy configuration from a TOML file.
+///
+/// Returns [`PolicyConfig::default()`] if the file does not exist.
 pub fn load_policy_config(path: impl AsRef<Path>) -> Result<PolicyConfig> {
     let path = path.as_ref();
     if !path.exists() {
@@ -27,6 +45,12 @@ pub fn load_policy_config(path: impl AsRef<Path>) -> Result<PolicyConfig> {
     toml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
 }
 
+/// Evaluate an operation plan against the policy configuration.
+///
+/// Returns a [`PolicyResult`] with the deterministic decision. Evaluation
+/// order: deny checks first, then risk-signal checks that require human
+/// approval, then ecosystem-specific allow rules, and finally a fallback
+/// `RequireHuman` for any uncovered operation.
 pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
     let mut deny_reasons = Vec::new();
     let mut human_reasons = Vec::new();

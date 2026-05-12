@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
 
+//! Apt package operation planning for Aegis.
+//!
+//! Generates read-only operation plans by running `apt-get -s` (simulated)
+//! commands and parsing their output. Never runs real installs or upgrades.
+
 use aegis_core::{push_unique, OperationPlan, Tool};
 use anyhow::{anyhow, Context, Result};
 use regex::Regex;
@@ -14,6 +19,7 @@ pub struct AptDryRunSummary {
     pub packages_held_back: Vec<String>,
 }
 
+/// Validate an apt package name against allowed characters.
 pub fn validate_apt_package_name(name: &str) -> Result<()> {
     if name.is_empty() {
         return Err(anyhow!("package name must not be empty"));
@@ -27,6 +33,10 @@ pub fn validate_apt_package_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Create an operation plan for `apt-get update`.
+///
+/// MVP does not run `apt-get update`; the plan describes the intended
+/// metadata refresh.
 pub fn plan_update() -> OperationPlan {
     let mut plan = OperationPlan::new(Tool::Apt, "update", None);
     plan.command_preview = vec!["apt-get".into(), "update".into()];
@@ -45,6 +55,7 @@ pub fn plan_update() -> OperationPlan {
     plan
 }
 
+/// Create an operation plan for `apt-get upgrade` using a simulated dry-run.
 pub fn plan_upgrade() -> Result<OperationPlan> {
     let output = Command::new("apt-get")
         .arg("-s")
@@ -64,6 +75,7 @@ pub fn plan_upgrade() -> Result<OperationPlan> {
     Ok(plan)
 }
 
+/// Create an operation plan for `apt-get install <package>` using a simulated dry-run.
 pub fn plan_install(package: &str) -> Result<OperationPlan> {
     validate_apt_package_name(package)?;
     let output = Command::new("apt-get")
@@ -101,6 +113,7 @@ fn plan_from_summary(
     raw: String,
 ) -> OperationPlan {
     let mut plan = OperationPlan::new(Tool::Apt, operation, target);
+    plan.ecosystem = Some("apt".into());
     plan.command_preview = command_preview.into_iter().map(String::from).collect();
     plan.mutates_system = true;
     plan.requires_root = true;
@@ -172,6 +185,7 @@ fn is_security_sensitive_package(name: &str) -> bool {
     .any(|needle| lower.contains(needle))
 }
 
+/// Parse the text output of an `apt-get -s` dry-run into a structured summary.
 pub fn parse_apt_dry_run(raw: &str) -> AptDryRunSummary {
     #[derive(Clone, Copy)]
     enum Section {

@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
 
+//! Container image operation planning for Aegis.
+//!
+//! Generates read-only operation plans using `docker manifest inspect` or
+//! `podman manifest inspect`. Never runs `docker pull` or `podman pull`.
+
 use aegis_core::{has_shell_metacharacters, push_unique, OperationPlan, Tool};
 use anyhow::{anyhow, Result};
 use regex::Regex;
@@ -21,6 +26,7 @@ impl ContainerRuntime {
     }
 }
 
+/// Validate a container image reference against allowed characters.
 pub fn validate_image_reference(image: &str) -> Result<()> {
     if image.is_empty()
         || image.contains(char::is_whitespace)
@@ -40,6 +46,7 @@ pub fn validate_image_reference(image: &str) -> Result<()> {
     }
 }
 
+/// Create an operation plan for pulling a container image.
 pub fn plan_pull(image: &str, runtime: ContainerRuntime) -> Result<OperationPlan> {
     validate_image_reference(image)?;
     let mut plan = base_plan(image, runtime);
@@ -126,6 +133,7 @@ fn add_image_reference_risks(plan: &mut OperationPlan, image: &str) {
     plan.signature_or_checksum_status = Some("unknown".into());
 }
 
+/// Enrich a plan with risk signals from a container manifest.
 pub fn enrich_plan_from_manifest(plan: &mut OperationPlan, manifest: &Value) {
     plan.metadata_available = true;
     if manifest.get("signatures").is_none() && plan.signature_or_checksum_status.is_none() {

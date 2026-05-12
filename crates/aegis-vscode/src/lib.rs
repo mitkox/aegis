@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
 
+//! VS Code extension operation planning for Aegis.
+//!
+//! Generates read-only operation plans by listing installed extensions with
+//! `code --list-extensions`. Never runs `code --install-extension`.
+
 use aegis_core::{
     denied_plan, has_shell_metacharacters, is_url_like, looks_like_local_path, push_unique,
     OperationPlan, Tool,
@@ -9,6 +14,7 @@ use regex::Regex;
 use serde_json::{json, Value};
 use std::process::Command;
 
+/// Validate a VS Code extension ID (publisher.name format).
 pub fn validate_extension_id(extension: &str) -> Result<()> {
     if extension.is_empty()
         || extension.contains(char::is_whitespace)
@@ -25,6 +31,7 @@ pub fn validate_extension_id(extension: &str) -> Result<()> {
     }
 }
 
+/// Create an operation plan for installing a VS Code extension.
 pub fn plan_install(extension: &str) -> Result<OperationPlan> {
     if is_url_like(extension) {
         return Ok(denied(
@@ -98,6 +105,7 @@ fn denied(signal: &str, extension: &str, reason: &str) -> OperationPlan {
     plan
 }
 
+/// Enrich a plan with risk signals from a VS Code extension's package.json.
 pub fn enrich_plan_from_package_json(plan: &mut OperationPlan, metadata: &Value) {
     if let Some(events) = metadata.get("activationEvents").and_then(Value::as_array) {
         for event in events.iter().filter_map(Value::as_str) {
@@ -115,8 +123,22 @@ pub fn enrich_plan_from_package_json(plan: &mut OperationPlan, metadata: &Value)
             }
         }
     }
-    let raw = metadata.to_string().to_ascii_lowercase();
-    if raw.contains("\"bin\"") || raw.contains("native") || raw.contains("executable") {
+    // Check for bundled binary risks via structured fields, not full-text substring
+    // matching which causes false positives (e.g. "Native dark mode support").
+    let has_bin_field = metadata.get("bin").is_some()
+        || metadata
+            .get("contributes")
+            .and_then(|c| c.get("bin"))
+            .is_some();
+    let has_native_module = metadata
+        .get("extensionDependencies")
+        .and_then(Value::as_array)
+        .is_some_and(|deps| {
+            deps.iter()
+                .filter_map(Value::as_str)
+                .any(|d| d.contains("native") || d.contains("executable"))
+        });
+    if has_bin_field || has_native_module {
         push_unique(&mut plan.risk_signals, "bundled-binary-risk");
         plan.binary_artifact_risk = true;
     }
