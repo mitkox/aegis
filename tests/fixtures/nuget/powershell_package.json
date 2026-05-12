@@ -1,0 +1,10 @@
+{
+  "name": "PowerShell.Package",
+  "version": "1.0.0",
+  "files": [
+    "tools/install.ps1"
+  ],
+  "scripts": [
+    "powershell -ExecutionPolicy Bypass -File install.ps1"
+  ]
+}

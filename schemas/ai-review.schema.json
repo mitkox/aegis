@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Aegis AI Review",
+  "type": "object",
+  "required": [
+    "risk",
+    "summary",
+    "supply_chain_risk",
+    "privilege_risk",
+    "persistence_risk",
+    "availability_risk",
+    "rollback_difficulty",
+    "red_flags",
+    "required_controls",
+    "recommendation"
+  ],
+  "properties": {
+    "risk": { "enum": ["low", "medium", "high", "deny"] },
+    "summary": { "type": "string" },
+    "supply_chain_risk": { "enum": ["low", "medium", "high"] },
+    "privilege_risk": { "enum": ["low", "medium", "high"] },
+    "persistence_risk": { "enum": ["low", "medium", "high"] },
+    "availability_risk": { "enum": ["low", "medium", "high"] },
+    "rollback_difficulty": { "enum": ["easy", "moderate", "hard"] },
+    "red_flags": { "type": "array", "items": { "type": "string" } },
+    "required_controls": { "type": "array", "items": { "type": "string" } },
+    "recommendation": {
+      "enum": ["auto_approve", "approve_with_snapshot", "require_human", "deny"]
+    }
+  }
+}

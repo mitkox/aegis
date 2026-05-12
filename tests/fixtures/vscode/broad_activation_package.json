@@ -1,0 +1,7 @@
+{
+  "name": "broad-extension",
+  "publisher": "publisher",
+  "activationEvents": [
+    "*"
+  ]
+}

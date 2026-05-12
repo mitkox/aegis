@@ -1,0 +1,26 @@
+[package]
+name = "aegis-cli"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "aegis"
+path = "src/main.rs"
+
+[dependencies]
+aegis-ai = { path = "../aegis-ai" }
+aegis-apt = { path = "../aegis-apt" }
+aegis-audit = { path = "../aegis-audit" }
+aegis-core = { path = "../aegis-core" }
+aegis-cargo = { path = "../aegis-cargo" }
+aegis-container = { path = "../aegis-container" }
+aegis-go = { path = "../aegis-go" }
+aegis-nuget = { path = "../aegis-nuget" }
+aegis-npm = { path = "../aegis-npm" }
+aegis-pip = { path = "../aegis-pip" }
+aegis-policy = { path = "../aegis-policy" }
+aegis-vscode = { path = "../aegis-vscode" }
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true

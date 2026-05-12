@@ -1,0 +1,14 @@
+[package]
+name = "aegis-vscode"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+aegis-core = { path = "../aegis-core" }
+anyhow.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+aegis-policy = { path = "../aegis-policy" }

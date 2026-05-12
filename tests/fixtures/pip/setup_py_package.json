@@ -1,0 +1,6 @@
+{
+  "name": "legacy-package",
+  "version": "0.9.0",
+  "setup_py": true,
+  "native_extension": false
+}

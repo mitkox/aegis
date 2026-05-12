@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Aegis ExecutionPlan",
+  "type": "object",
+  "description": "Reserved for post-MVP signed execution plans.",
+  "required": ["plan_id", "operation_plan_id", "argv", "signature"],
+  "properties": {
+    "plan_id": { "type": "string" },
+    "operation_plan_id": { "type": "string" },
+    "argv": { "type": "array", "items": { "type": "string" } },
+    "signature": { "type": "string" }
+  }
+}

@@ -1,0 +1,11 @@
+[package]
+name = "aegis-apt"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+aegis-core = { path = "../aegis-core" }
+anyhow.workspace = true
+regex.workspace = true
+serde_json.workspace = true

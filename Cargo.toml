@@ -1,0 +1,52 @@
+[workspace]
+members = [
+  "crates/aegis-cli",
+  "crates/aegis-core",
+  "crates/aegis-apt",
+  "crates/aegis-npm",
+  "crates/aegis-pip",
+  "crates/aegis-container",
+  "crates/aegis-nuget",
+  "crates/aegis-vscode",
+  "crates/aegis-go",
+  "crates/aegis-cargo",
+  "crates/aegis-ai",
+  "crates/aegis-policy",
+  "crates/aegis-audit",
+]
+resolver = "2"
+default-members = [
+  "crates/aegis-cli",
+  "crates/aegis-core",
+  "crates/aegis-apt",
+  "crates/aegis-npm",
+  "crates/aegis-pip",
+  "crates/aegis-container",
+  "crates/aegis-nuget",
+  "crates/aegis-vscode",
+  "crates/aegis-go",
+  "crates/aegis-cargo",
+  "crates/aegis-ai",
+  "crates/aegis-policy",
+  "crates/aegis-audit",
+]
+
+[workspace.package]
+authors = ["Aegis contributors"]
+description = "Local zero-trust package and artifact operation broker"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+rust-version = "1.85"
+version = "0.1.0"
+
+[workspace.dependencies]
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.5", features = ["derive"] }
+regex = "1.10"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+uuid = { version = "1.8", features = ["v4", "serde"] }

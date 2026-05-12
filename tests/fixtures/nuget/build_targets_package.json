@@ -1,0 +1,8 @@
+{
+  "name": "BuildTargets.Package",
+  "version": "1.0.0",
+  "files": [
+    "build/BuildTargets.Package.targets",
+    "buildTransitive/BuildTargets.Package.props"
+  ]
+}

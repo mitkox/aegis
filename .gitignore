@@ -1,0 +1,15 @@
+/target/
+/.claude/
+/.codex/
+/.idea/
+/.vscode/
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+
+# Local Aegis outputs should live under ~/.local/share/aegis and ~/.cache/aegis.
+/plans/
+/reviews/
+/policy-results/

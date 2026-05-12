@@ -1,0 +1,13 @@
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Calculating upgrade...
+The following NEW packages will be installed:
+  linux-image-6.8.0-40-generic linux-headers-6.8.0-40-generic
+The following packages will be upgraded:
+  linux-image-generic linux-headers-generic
+2 upgraded, 2 newly installed, 0 to remove and 0 not upgraded.
+Inst linux-image-6.8.0-40-generic (6.8.0-40.40 Ubuntu:24.04/noble-updates [amd64])
+Inst linux-headers-6.8.0-40-generic (6.8.0-40.40 Ubuntu:24.04/noble-updates [amd64])
+Inst linux-image-generic [6.8.0-39.39] (6.8.0-40.40 Ubuntu:24.04/noble-updates [amd64])
+Inst linux-headers-generic [6.8.0-39.39] (6.8.0-40.40 Ubuntu:24.04/noble-updates [amd64])

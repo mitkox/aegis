@@ -1,0 +1,7 @@
+{
+  "name": "clean-extension",
+  "publisher": "publisher",
+  "activationEvents": [
+    "onLanguage:rust"
+  ]
+}

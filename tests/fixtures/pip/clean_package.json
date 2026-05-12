@@ -1,0 +1,7 @@
+{
+  "name": "requests",
+  "version": "2.32.0",
+  "pyproject_toml": false,
+  "setup_py": false,
+  "native_extension": false
+}

@@ -1,0 +1,7 @@
+{
+  "name": "workspace-extension",
+  "publisher": "publisher",
+  "activationEvents": [
+    "workspaceContains:**/.env"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "name": "macro-crate",
+  "version": "0.1.0",
+  "proc_macro": true
+}

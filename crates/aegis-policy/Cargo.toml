@@ -1,0 +1,12 @@
+[package]
+name = "aegis-policy"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+aegis-core = { path = "../aegis-core" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true

@@ -1,0 +1,10 @@
+{
+  "name": "binary-extension",
+  "publisher": "publisher",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "bin": {
+    "helper": "./native/helper"
+  }
+}

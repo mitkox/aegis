@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Aegis PolicyResult",
+  "type": "object",
+  "required": ["decision", "reasons", "required_controls"],
+  "properties": {
+    "decision": { "enum": ["allow", "allow_with_snapshot", "require_human", "deny"] },
+    "reasons": { "type": "array", "items": { "type": "string" } },
+    "required_controls": { "type": "array", "items": { "type": "string" } }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "native-package",
+  "version": "1.0.0",
+  "pyproject_toml": true,
+  "build_backend": "setuptools.build_meta",
+  "native_extension": true
+}

@@ -1,0 +1,9 @@
+{
+  "name": "native-link",
+  "version": "0.1.0",
+  "links": "z",
+  "dependencies": [
+    "cc",
+    "pkg-config"
+  ]
+}

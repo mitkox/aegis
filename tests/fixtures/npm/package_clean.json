@@ -1,0 +1,15 @@
+{
+  "name": "clean-package",
+  "version": "4.5.6",
+  "dist": {
+    "tarball": "https://registry.npmjs.org/clean-package/-/clean-package-4.5.6.tgz"
+  },
+  "dependencies": {
+    "ansi-regex": "^6.0.1",
+    "strip-ansi": "^7.1.0"
+  },
+  "maintainers": [
+    { "name": "maintainer-a" },
+    { "name": "maintainer-b" }
+  ]
+}
