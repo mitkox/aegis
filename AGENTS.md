@@ -10,14 +10,14 @@ User intent -> deterministic analyzer -> local model review -> deterministic pol
 - Never execute model-generated commands.
 - Never use `shell=True` or equivalent shell-mediated command execution.
 - Keep `--plan` read-only. Planning may run only approved dry-run or metadata commands.
-- Never run `sudo`, real `apt-get install`, real `apt-get upgrade`, `npm install`, `pip install`, `docker pull`, `podman pull`, `nuget install`, `dotnet add package`, `code --install-extension`, `go get`, `cargo install`, lifecycle scripts, or `curl | bash` in MVP planning code.
+- Never run `sudo`, real `apt-get install`, real `apt-get upgrade`, `npm install`, `pip install`, `docker pull`, `podman pull`, `nuget install`, `dotnet add package`, `code --install-extension`, `go get`, `cargo install`, lifecycle scripts, or `curl | bash` in planning code.
 - Prefer deterministic policy over AI judgement.
 - Validate all package names before using them in subprocess argv.
 - Do not weaken security tests to pass.
 - Add tests for deny paths whenever policy behavior changes.
 - Keep command previews as argv arrays, not shell strings.
 
-## Allowed MVP Subprocesses
+## Allowed Planning Subprocesses
 
 - `apt-get -s upgrade`
 - `apt-get -s install <validated-package>`
@@ -51,4 +51,29 @@ The model is a reviewer only. It may classify risk and suggest controls, but it 
 
 ## Executor Boundary
 
-The root executor is intentionally not implemented in MVP. Future executor work must require signed execution plans and must constrain argv to deterministic, policy-approved operations.
+The root executor exists only as the narrow `aegisd` constrained execution gate.
+It must accept only signed execution plans, verify deterministic policy/preflight
+again, and constrain argv to deterministic, policy-approved allowlists. Current
+production apply is APT-only and limited to the explicit argv forms documented
+in `README.md`.
+
+Agents must not bypass `aegisd` with direct package-manager mutation. If a
+service install, unit replacement, or production apply needs root privileges,
+the human operator must run that command from a root shell; the agent may
+prepare and verify instructions but must not obtain root privileges.
+
+## Production Service Testing
+
+Agents may run these read-only checks:
+
+- `packaging/verify-native.sh`
+- `systemctl status aegis-reviewd.service aegisd.service aegis-monitor.service aegis-monitor.timer --no-pager`
+- `aegis doctor`
+- `aegis <ecosystem> <operation> --plan`
+- `aegis review <plan.json>`
+- `aegis policy <plan.json>`
+- `aegisctl verify --execution-plan <execution-plan.json> --public-key-hex <public-key-hex>`
+
+Agents must not sign or apply execution plans unless the user explicitly
+approves the specific plan and policy result. Apply must use `aegisctl apply`
+against `aegisd`, never direct package-manager commands.

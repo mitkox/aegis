@@ -1,16 +1,10 @@
 #![forbid(unsafe_code)]
 
-//! Core types and utilities for Aegis operation plans.
-//!
-//! This crate defines the shared data model used by all Aegis ecosystem
-//! adapters, the policy engine, and the AI reviewer.
-
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-/// The package manager or tool that an operation targets.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Tool {
@@ -24,32 +18,26 @@ pub enum Tool {
     Cargo,
 }
 
-/// The deterministic policy decision for an operation plan.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyDecision {
-    /// Operation may proceed without additional controls.
     Allow,
-    /// Operation may proceed if a system snapshot is taken first.
     AllowWithSnapshot,
-    /// Operation requires explicit human approval before proceeding.
     RequireHuman,
-    /// Operation is denied by policy and must not proceed.
     Deny,
 }
 
-/// The result of a deterministic policy evaluation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PolicyResult {
-    /// The policy decision.
     pub decision: PolicyDecision,
-    /// Human-readable reasons explaining the decision.
     pub reasons: Vec<String>,
-    /// Controls that must be satisfied before the operation can proceed.
     pub required_controls: Vec<String>,
+    pub policy_version: String,
+    pub evaluator_hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence_fresh_until: Option<String>,
 }
 
-/// Overall risk classification from the AI reviewer.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum OverallRisk {
@@ -59,7 +47,6 @@ pub enum OverallRisk {
     Deny,
 }
 
-/// Risk level for individual risk dimensions.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RiskLevel {
@@ -68,7 +55,6 @@ pub enum RiskLevel {
     High,
 }
 
-/// How difficult it is to roll back the operation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RollbackDifficulty {
@@ -77,7 +63,6 @@ pub enum RollbackDifficulty {
     Hard,
 }
 
-/// The AI reviewer's recommendation (advisory only; policy decides).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AiRecommendation {
@@ -87,10 +72,6 @@ pub enum AiRecommendation {
     Deny,
 }
 
-/// Structured AI review output for a single operation plan.
-///
-/// The AI reviewer fills this structure. It is advisory only —
-/// deterministic policy in [`aegis_policy::evaluate`] makes the final decision.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AiReview {
     pub risk: OverallRisk,
@@ -105,13 +86,6 @@ pub struct AiReview {
     pub recommendation: AiRecommendation,
 }
 
-/// A read-only operation plan describing a package manager operation.
-///
-/// Plans are the central data structure in Aegis. Each adapter creates a plan
-/// from dry-run output or metadata queries, enriches it with risk signals,
-/// and persists it for policy evaluation and optional AI review.
-///
-/// Plans never mutate the system — they only *describe* what would happen.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OperationPlan {
     pub plan_id: String,
@@ -155,7 +129,6 @@ pub struct OperationPlan {
 }
 
 impl OperationPlan {
-    /// Create a new operation plan with a fresh UUID and timestamp.
     pub fn new(tool: Tool, operation: impl Into<String>, target: Option<String>) -> Self {
         Self {
             plan_id: Uuid::new_v4().to_string(),
@@ -192,10 +165,6 @@ impl OperationPlan {
     }
 }
 
-/// Return `true` if the string contains shell metacharacters.
-///
-/// Checked characters: `;`, `&`, `|`, `` ` ``, `$`, `(`, `)`, `<`, `>`,
-/// newline, carriage return, and tab.
 pub fn has_shell_metacharacters(s: &str) -> bool {
     s.chars().any(|c| {
         matches!(
@@ -205,7 +174,6 @@ pub fn has_shell_metacharacters(s: &str) -> bool {
     })
 }
 
-/// Return `true` if the value looks like a URL (http, https, git, ssh).
 pub fn is_url_like(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     lower.starts_with("http://")
@@ -214,7 +182,6 @@ pub fn is_url_like(value: &str) -> bool {
         || lower.starts_with("ssh://")
 }
 
-/// Return `true` if the value looks like a local filesystem path.
 pub fn looks_like_local_path(value: &str) -> bool {
     value.starts_with("./")
         || value.starts_with("../")
@@ -223,10 +190,6 @@ pub fn looks_like_local_path(value: &str) -> bool {
         || value.contains('\\')
 }
 
-/// Create a pre-denied operation plan for a validation failure.
-///
-/// The plan is populated with the given risk signal and reason, and the
-/// `warnings` field includes the validation error message.
 pub fn denied_plan(
     tool: Tool,
     ecosystem: &str,
@@ -246,10 +209,126 @@ pub fn denied_plan(
     plan
 }
 
-/// Push a value into a `Vec<String>` only if it is not already present.
 pub fn push_unique(values: &mut Vec<String>, value: impl Into<String>) {
     let value = value.into();
     if !values.iter().any(|existing| existing == &value) {
         values.push(value);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SignatureEnvelope {
+    pub algorithm: String,
+    pub key_id: String,
+    pub signature: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Approval {
+    pub signer: String,
+    pub reason: String,
+    pub approved_at: String,
+    pub expires_at: String,
+    pub plan_hash: String,
+    pub signature: SignatureEnvelope,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditEventKind {
+    ReviewCompleted,
+    ExecutionStarted,
+    ExecutionCompleted,
+    ExecutionDenied,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditEvent {
+    pub schema_version: u32,
+    pub sequence: u64,
+    pub event_id: String,
+    pub timestamp: String,
+    pub host: String,
+    pub kind: AuditEventKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_plan_id: Option<String>,
+    pub argv: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision: Option<PolicyDecision>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_status: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdout_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stderr_sha256: Option<String>,
+    pub details: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_hash: Option<String>,
+    pub event_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExecutionPlan {
+    pub schema_version: u32,
+    pub execution_plan_id: String,
+    pub operation_plan_id: String,
+    pub policy_decision: PolicyDecision,
+    pub policy_version: String,
+    pub evaluator_hash: String,
+    pub argv: Vec<String>,
+    pub exact_targets: Vec<String>,
+    pub required_preflight_checks: Vec<String>,
+    pub required_controls: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rollback_plan: Option<Value>,
+    pub signer_identity: String,
+    pub created_at: String,
+    pub expires_at: String,
+    pub approvals: Vec<Approval>,
+    pub operation_plan_hash: String,
+    pub policy_result_hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<SignatureEnvelope>,
+}
+
+impl ExecutionPlan {
+    pub fn new(
+        op: &OperationPlan,
+        policy: &PolicyResult,
+        argv: Vec<String>,
+        signer_identity: impl Into<String>,
+        expires_at: impl Into<String>,
+        operation_plan_hash: impl Into<String>,
+        policy_result_hash: impl Into<String>,
+    ) -> Self {
+        let targets: Vec<String> = op.target.iter().cloned().collect();
+        Self {
+            schema_version: 1,
+            execution_plan_id: Uuid::new_v4().to_string(),
+            operation_plan_id: op.plan_id.clone(),
+            policy_decision: policy.decision.clone(),
+            policy_version: policy.policy_version.clone(),
+            evaluator_hash: policy.evaluator_hash.clone(),
+            argv,
+            exact_targets: targets,
+            required_preflight_checks: vec![
+                "signature".into(),
+                "expiry".into(),
+                "argv-allowlist".into(),
+            ],
+            required_controls: policy.required_controls.clone(),
+            rollback_plan: None,
+            signer_identity: signer_identity.into(),
+            created_at: Utc::now().to_rfc3339(),
+            expires_at: expires_at.into(),
+            approvals: Vec::new(),
+            operation_plan_hash: operation_plan_hash.into(),
+            policy_result_hash: policy_result_hash.into(),
+            signature: None,
+        }
     }
 }

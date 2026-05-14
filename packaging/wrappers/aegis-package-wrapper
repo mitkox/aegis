@@ -1,0 +1,69 @@
+#!/bin/sh
+set -eu
+
+tool="$(basename "$0")"
+
+deny() {
+  printf '%s\n' "aegis: direct package mutation is blocked; use aegis/aegisctl signed planning and apply flow" >&2
+  exit 126
+}
+
+case "$tool:$1" in
+  apt:update|apt-get:update)
+    exec aegis apt update --plan
+    ;;
+  apt:upgrade|apt-get:upgrade)
+    exec aegis apt upgrade --plan
+    ;;
+  apt:install|apt-get:install)
+    shift
+    if [ "$#" -eq 1 ]; then
+      exec aegis apt install "$1" --plan
+    fi
+    deny
+    ;;
+  npm:install)
+    shift
+    if [ "$#" -eq 1 ]; then
+      exec aegis npm install "$1" --plan
+    fi
+    deny
+    ;;
+  pip:install|pip3:install)
+    shift
+    if [ "$#" -eq 1 ]; then
+      exec aegis pip install "$1" --plan
+    fi
+    deny
+    ;;
+  docker:pull)
+    shift
+    if [ "$#" -eq 1 ]; then
+      exec aegis docker pull "$1" --plan
+    fi
+    deny
+    ;;
+  podman:pull)
+    shift
+    if [ "$#" -eq 1 ]; then
+      exec aegis podman pull "$1" --plan
+    fi
+    deny
+    ;;
+  go:get)
+    shift
+    if [ "$#" -eq 1 ]; then
+      exec aegis go get "$1" --plan
+    fi
+    deny
+    ;;
+  cargo:install)
+    shift
+    if [ "$#" -eq 1 ]; then
+      exec aegis cargo install "$1" --plan
+    fi
+    deny
+    ;;
+esac
+
+deny

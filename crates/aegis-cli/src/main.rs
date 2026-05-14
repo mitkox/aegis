@@ -424,7 +424,8 @@ fn review(plan_file: &Path) -> Result<()> {
 fn policy(plan_file: &Path) -> Result<()> {
     aegis_audit::ensure_dirs()?;
     let plan = read_plan(plan_file)?;
-    let config = aegis_policy::load_policy_config(resolve_policy_path())?;
+    let config_path = policy_config_path();
+    let config = aegis_policy::load_policy_config(&config_path)?;
     let result = aegis_policy::evaluate(&plan, &config);
     let filename = format!("{}.policy.json", plan.plan_id);
     let path = aegis_audit::write_json(aegis_audit::policy_dir()?, &filename, &result)?;
@@ -433,26 +434,25 @@ fn policy(plan_file: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Resolve the policy configuration file path.
-///
-/// Priority: `$AEGIS_POLICY_FILE` > `$XDG_CONFIG_HOME/aegis/policy.toml`
-/// > `$HOME/.config/aegis/policy.toml` > `policies/default-policy.toml`.
-fn resolve_policy_path() -> PathBuf {
-    if let Ok(path) = std::env::var("AEGIS_POLICY_FILE") {
+fn policy_config_path() -> PathBuf {
+    if let Ok(path) = std::env::var("AEGIS_POLICY_CONFIG") {
         return PathBuf::from(path);
     }
-    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        let path = PathBuf::from(xdg).join("aegis/policy.toml");
-        if path.exists() {
-            return path;
-        }
+    let xdg = std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+            PathBuf::from(home).join(".config")
+        });
+    let xdg_path = xdg.join("aegis/policy.toml");
+    if xdg_path.exists() {
+        return xdg_path;
     }
-    if let Ok(home) = std::env::var("HOME") {
-        let path = PathBuf::from(home).join(".config/aegis/policy.toml");
-        if path.exists() {
-            return path;
-        }
+    let etc_path = PathBuf::from("/etc/aegis/policy.toml");
+    if etc_path.exists() {
+        return etc_path;
     }
+    // Fallback to local/built-in default
     PathBuf::from("policies/default-policy.toml")
 }
 
@@ -540,14 +540,12 @@ fn doctor() -> Result<()> {
         ),
     }
 
-    let data = aegis_audit::data_dir()?;
-    match aegis_audit::check_writable(data.clone()) {
-        Ok(()) => println!("ok: can write {}", data.display()),
+    match aegis_audit::check_writable(aegis_audit::data_dir()?) {
+        Ok(()) => println!("ok: can write {}", aegis_audit::data_dir()?.display()),
         Err(err) => println!("error: cannot write data dir: {err}"),
     }
-    let cache = aegis_audit::cache_dir()?;
-    match aegis_audit::check_writable(cache.clone()) {
-        Ok(()) => println!("ok: can write {}", cache.display()),
+    match aegis_audit::check_writable(aegis_audit::cache_dir()?) {
+        Ok(()) => println!("ok: can write {}", aegis_audit::cache_dir()?.display()),
         Err(err) => println!("error: cannot write cache dir: {err}"),
     }
     Ok(())

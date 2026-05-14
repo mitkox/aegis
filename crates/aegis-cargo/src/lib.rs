@@ -1,10 +1,5 @@
 #![forbid(unsafe_code)]
 
-//! Cargo crate operation planning for Aegis.
-//!
-//! Generates read-only operation plans using `cargo search`.
-//! Never runs `cargo install`.
-
 use aegis_core::{
     denied_plan, has_shell_metacharacters, is_url_like, looks_like_local_path, push_unique,
     OperationPlan, Tool,
@@ -14,7 +9,6 @@ use regex::Regex;
 use serde_json::{json, Value};
 use std::process::Command;
 
-/// Validate a crate name against allowed characters.
 pub fn validate_crate_name(name: &str) -> Result<()> {
     if name.is_empty() || name.contains(char::is_whitespace) || has_shell_metacharacters(name) {
         return Err(anyhow!("invalid crate name"));
@@ -27,7 +21,6 @@ pub fn validate_crate_name(name: &str) -> Result<()> {
     }
 }
 
-/// Create an operation plan for `cargo install <crate>`.
 pub fn plan_install(name: &str) -> Result<OperationPlan> {
     if is_url_like(name) || name.starts_with("git+") {
         return Ok(denied(
@@ -99,7 +92,6 @@ fn denied(signal: &str, name: &str, reason: &str) -> OperationPlan {
     plan
 }
 
-/// Enrich a plan with risk signals from Cargo crate metadata.
 pub fn enrich_plan_from_metadata(plan: &mut OperationPlan, metadata: &Value) {
     if metadata
         .get("build_rs")
@@ -117,17 +109,12 @@ pub fn enrich_plan_from_metadata(plan: &mut OperationPlan, metadata: &Value) {
         push_unique(&mut plan.risk_signals, "proc-macro-risk");
         plan.build_hooks_detected.push("proc-macro".into());
     }
-    let has_native_deps = metadata.get("links").is_some()
-        || metadata
-            .get("build_dependencies")
-            .and_then(Value::as_object)
-            .is_some_and(|deps| deps.contains_key("cc") || deps.contains_key("cmake"))
-        || metadata
-            .get("dependencies")
-            .and_then(Value::as_object)
-            .is_some_and(|deps| deps.contains_key("cc") || deps.contains_key("cmake"));
     let raw = metadata.to_string().to_ascii_lowercase();
-    if has_native_deps || raw.contains("pkg-config") {
+    if metadata.get("links").is_some()
+        || raw.contains("cc")
+        || raw.contains("cmake")
+        || raw.contains("pkg-config")
+    {
         push_unique(&mut plan.risk_signals, "native-link-risk");
         plan.native_code_risk = true;
     }

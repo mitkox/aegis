@@ -2,12 +2,51 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Aegis ExecutionPlan",
   "type": "object",
-  "description": "Reserved for post-MVP signed execution plans.",
-  "required": ["plan_id", "operation_plan_id", "argv", "signature"],
+  "required": [
+    "schema_version",
+    "execution_plan_id",
+    "operation_plan_id",
+    "policy_decision",
+    "policy_version",
+    "evaluator_hash",
+    "argv",
+    "exact_targets",
+    "required_preflight_checks",
+    "required_controls",
+    "signer_identity",
+    "created_at",
+    "expires_at",
+    "approvals",
+    "operation_plan_hash",
+    "policy_result_hash",
+    "signature"
+  ],
   "properties": {
-    "plan_id": { "type": "string" },
+    "schema_version": { "type": "integer" },
+    "execution_plan_id": { "type": "string" },
     "operation_plan_id": { "type": "string" },
+    "policy_decision": { "enum": ["allow", "allow_with_snapshot", "require_human", "deny"] },
+    "policy_version": { "type": "string" },
+    "evaluator_hash": { "type": "string" },
     "argv": { "type": "array", "items": { "type": "string" } },
-    "signature": { "type": "string" }
+    "exact_targets": { "type": "array", "items": { "type": "string" } },
+    "required_preflight_checks": { "type": "array", "items": { "type": "string" } },
+    "required_controls": { "type": "array", "items": { "type": "string" } },
+    "rollback_plan": { "type": ["object", "null"] },
+    "signer_identity": { "type": "string" },
+    "created_at": { "type": "string" },
+    "expires_at": { "type": "string" },
+    "approvals": { "type": "array", "items": { "type": "object" } },
+    "operation_plan_hash": { "type": "string" },
+    "policy_result_hash": { "type": "string" },
+    "signature": {
+      "type": "object",
+      "required": ["algorithm", "key_id", "signature"],
+      "properties": {
+        "algorithm": { "type": "string" },
+        "key_id": { "type": "string" },
+        "signature": { "type": "string" }
+      }
+    }
   }
 }

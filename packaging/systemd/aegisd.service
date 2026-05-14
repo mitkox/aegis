@@ -1,0 +1,32 @@
+[Unit]
+Description=Aegis constrained root execution gate
+Documentation=man:aegisd(8)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/libexec/aegis/aegisd --socket /run/aegis/aegisd.sock
+EnvironmentFile=-/etc/aegis/aegisd.env
+RuntimeDirectory=aegis
+RuntimeDirectoryMode=0770
+StateDirectory=aegis
+LogsDirectory=aegis
+User=root
+Group=aegis-admin
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/aegis /var/lib/aegis /var/lib/dpkg /var/lib/apt /var/cache/apt /var/log/apt
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

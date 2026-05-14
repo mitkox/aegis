@@ -1,17 +1,11 @@
 #![forbid(unsafe_code)]
 
-//! Npm package operation planning for Aegis.
-//!
-//! Generates read-only operation plans by querying `npm view` for registry
-//! metadata. Never runs `npm install`.
-
 use aegis_core::{push_unique, OperationPlan, Tool};
 use anyhow::{anyhow, Context, Result};
 use regex::Regex;
 use serde_json::{json, Value};
 use std::process::Command;
 
-/// Validate an npm package name (scoped or unscoped).
 pub fn validate_npm_package_name(name: &str) -> Result<()> {
     if name.is_empty() {
         return Err(anyhow!("package name must not be empty"));
@@ -31,7 +25,6 @@ pub fn validate_npm_package_name(name: &str) -> Result<()> {
     }
 }
 
-/// Create an operation plan for `npm install <package>`.
 pub fn plan_install(package: &str) -> Result<OperationPlan> {
     validate_npm_package_name(package)?;
     let mut plan = OperationPlan::new(Tool::Npm, "install", Some(package.to_string()));
@@ -59,7 +52,7 @@ pub fn plan_install(package: &str) -> Result<OperationPlan> {
                     .push("npm returned metadata that was not valid JSON".into());
                 json!({ "raw": raw })
             });
-            enrich_plan_from_metadata(&mut plan, &metadata);
+            enrich_plan_from_metadata(&mut plan, metadata);
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             plan.warnings
@@ -79,8 +72,7 @@ fn command_output_to_string(output: &std::process::Output) -> String {
     raw
 }
 
-/// Enrich a plan with risk signals extracted from npm registry metadata.
-pub fn enrich_plan_from_metadata(plan: &mut OperationPlan, metadata: &Value) {
+pub fn enrich_plan_from_metadata(plan: &mut OperationPlan, metadata: Value) {
     let latest_version = metadata
         .get("version")
         .and_then(Value::as_str)
@@ -172,7 +164,7 @@ mod tests {
         .unwrap();
         let mut plan = OperationPlan::new(Tool::Npm, "install", Some("risky".into()));
         plan.risk_signals = vec!["npm-package".into(), "network-operation".into()];
-        enrich_plan_from_metadata(&mut plan, &metadata);
+        enrich_plan_from_metadata(&mut plan, metadata);
         assert!(plan.risk_signals.contains(&"lifecycle-scripts".into()));
         assert!(plan.risk_signals.contains(&"binary-download-risk".into()));
     }
@@ -185,7 +177,7 @@ mod tests {
         .unwrap();
         let mut plan = OperationPlan::new(Tool::Npm, "install", Some("clean-package".into()));
         plan.risk_signals = vec!["npm-package".into(), "network-operation".into()];
-        enrich_plan_from_metadata(&mut plan, &metadata);
+        enrich_plan_from_metadata(&mut plan, metadata);
         assert!(!plan.risk_signals.contains(&"lifecycle-scripts".into()));
         assert_eq!(
             plan.raw_evidence

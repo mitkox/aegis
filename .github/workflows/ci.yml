@@ -24,6 +24,9 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Check Cargo.lock is up-to-date
+        run: cargo update --locked
+
       - name: Format
         run: cargo fmt --check
 
@@ -32,3 +35,6 @@ jobs:
 
       - name: Test
         run: cargo test
+
+      - name: Build release binaries
+        run: cargo build --release

@@ -8,11 +8,24 @@ version.workspace = true
 name = "aegis"
 path = "src/main.rs"
 
+[[bin]]
+name = "aegisctl"
+path = "src/bin/aegisctl.rs"
+
+[[bin]]
+name = "aegisd"
+path = "src/bin/aegisd.rs"
+
+[[bin]]
+name = "aegis-reviewd"
+path = "src/bin/aegis-reviewd.rs"
+
 [dependencies]
 aegis-ai = { path = "../aegis-ai" }
 aegis-apt = { path = "../aegis-apt" }
 aegis-audit = { path = "../aegis-audit" }
 aegis-core = { path = "../aegis-core" }
+aegis-executor = { path = "../aegis-executor" }
 aegis-cargo = { path = "../aegis-cargo" }
 aegis-container = { path = "../aegis-container" }
 aegis-go = { path = "../aegis-go" }
@@ -20,7 +33,10 @@ aegis-nuget = { path = "../aegis-nuget" }
 aegis-npm = { path = "../aegis-npm" }
 aegis-pip = { path = "../aegis-pip" }
 aegis-policy = { path = "../aegis-policy" }
+aegis-signing = { path = "../aegis-signing" }
 aegis-vscode = { path = "../aegis-vscode" }
 anyhow.workspace = true
+chrono.workspace = true
 clap.workspace = true
+serde.workspace = true
 serde_json.workspace = true

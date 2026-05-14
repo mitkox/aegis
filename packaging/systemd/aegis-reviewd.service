@@ -1,0 +1,27 @@
+[Unit]
+Description=Aegis unprivileged local model reviewer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/libexec/aegis/aegis-reviewd --socket /run/aegis/aegis-reviewd.sock
+EnvironmentFile=-/etc/aegis/aegis-reviewd.env
+RuntimeDirectory=aegis
+RuntimeDirectoryMode=0770
+LogsDirectory=aegis
+User=aegis-review
+Group=aegis-admin
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/aegis
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

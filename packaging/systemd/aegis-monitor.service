@@ -1,0 +1,19 @@
+[Unit]
+Description=Aegis scheduled inventory and repository drift scan
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/aegis doctor
+Environment=XDG_DATA_HOME=/var/lib
+Environment=XDG_CACHE_HOME=/var/cache
+Environment=AEGIS_AUDIT_LOG_DIR=/var/log/aegis
+StateDirectory=aegis
+CacheDirectory=aegis
+LogsDirectory=aegis
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/aegis /var/lib/aegis /var/cache/aegis

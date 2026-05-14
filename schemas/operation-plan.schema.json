@@ -27,6 +27,7 @@
     "raw_evidence"
   ],
   "properties": {
+    "schema_version": { "type": "integer" },
     "plan_id": { "type": "string" },
     "created_at": { "type": "string" },
     "tool": {
@@ -58,6 +59,12 @@
     "transitive_dependency_count": { "type": "integer" },
     "risk_signals": { "type": "array", "items": { "type": "string" } },
     "warnings": { "type": "array", "items": { "type": "string" } },
+    "repository_evidence": { "type": "array", "items": { "type": "object" } },
+    "vulnerability_evidence": { "type": "array", "items": { "type": "object" } },
+    "provenance_evidence": { "type": "array", "items": { "type": "object" } },
+    "sbom_evidence": { "type": "array", "items": { "type": "object" } },
+    "rollback_plan": { "type": ["object", "null"] },
+    "risk_score": { "type": ["object", "null"] },
     "raw_evidence": { "type": "object" }
   }
 }

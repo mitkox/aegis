@@ -1,6 +1,6 @@
 # Security Policy
 
-Aegis is pre-1.0 security tooling. Treat it as an MVP for package operation planning and review, not as a production root executor.
+Aegis is security-sensitive production foundation tooling for package operation planning, policy review, signed execution plans, and constrained local execution.
 
 ## Supported Versions
 
@@ -32,6 +32,6 @@ User intent
 -> audit log
 ```
 
-The current MVP implements planning, review, policy, and audit file output. It does not implement signed execution plans or a constrained root executor.
+The current production boundary implements planning, review, deterministic policy, signed execution plans, a constrained `aegisd` executor, and tamper-evident audit logging. Production apply is currently APT-only and limited to policy-approved argv forms documented in `README.md`.
 
 The model is a reviewer only. It must not execute commands, approve execution, or generate commands that Aegis runs.

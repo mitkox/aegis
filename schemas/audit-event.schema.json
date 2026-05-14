@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Aegis AuditEvent",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "sequence",
+    "event_id",
+    "timestamp",
+    "host",
+    "kind",
+    "argv",
+    "details",
+    "event_hash"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer" },
+    "sequence": { "type": "integer" },
+    "event_id": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "host": { "type": "string" },
+    "kind": { "type": "string" },
+    "actor": { "type": ["string", "null"] },
+    "plan_id": { "type": ["string", "null"] },
+    "execution_plan_id": { "type": ["string", "null"] },
+    "argv": { "type": "array", "items": { "type": "string" } },
+    "decision": { "enum": ["allow", "allow_with_snapshot", "require_human", "deny", null] },
+    "exit_status": { "type": ["integer", "null"] },
+    "stdout_sha256": { "type": ["string", "null"] },
+    "stderr_sha256": { "type": ["string", "null"] },
+    "details": { "type": "object" },
+    "previous_hash": { "type": ["string", "null"] },
+    "event_hash": { "type": "string" }
+  }
+}

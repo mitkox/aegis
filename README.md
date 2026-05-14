@@ -1,10 +1,10 @@
 # Aegis
 
-Aegis is a local zero-trust package operation broker for Ubuntu package operations. It replaces direct package changes such as `sudo apt upgrade` or `npm install lodash` with deterministic planning, local AI review, deterministic policy, and auditable plan files.
+Aegis is a local zero-trust package operation broker. It replaces direct package changes such as `sudo apt upgrade` or `npm install lodash` with deterministic planning, local AI review, deterministic policy, and auditable signed execution plans.
 
-> Status: MVP. Aegis is useful for read-only planning, risk visibility, AI review, and deterministic policy checks. It is not yet a production root executor.
+> Status: **0.2.5**. Planning, AI review, deterministic policy, Ed25519-signed execution plans, constrained root executor (`aegisd`), and tamper-evident audit logging are implemented. Production apply is currently APT-only.
 
-MVP command flow:
+Command flow:
 
 ```text
 User intent
@@ -12,11 +12,9 @@ User intent
 -> local model review
 -> deterministic policy decision
 -> signed execution plan
--> constrained executor
--> audit log
+-> constrained executor (aegisd)
+-> tamper-evident audit log
 ```
-
-The MVP implements planning, review, policy evaluation, and audit file output. It does not implement privileged execution.
 
 ## Threat Model
 
@@ -70,66 +68,63 @@ Use the model path and vLLM flags appropriate for your local installation and ha
 
 ## Commands
 
-Development (from repo root):
-
-```bash
-cargo run -- doctor
-cargo run -- apt update --plan
-cargo run -- apt upgrade --plan
-cargo run -- apt install nginx --plan
-cargo run -- npm install lodash --plan
-cargo run -- pip install requests --plan
-cargo run -- docker pull ubuntu:latest --plan
-cargo run -- container pull ghcr.io/org/image@sha256:<digest> --plan
-cargo run -- nuget install Newtonsoft.Json --plan
-cargo run -- vscode install ms-python.python --plan
-cargo run -- go get github.com/gin-gonic/gin@v1.10.0 --plan
-cargo run -- cargo install ripgrep --plan
-cargo run -- review ~/.local/share/aegis/plans/<plan-id>.json
-cargo run -- policy ~/.local/share/aegis/plans/<plan-id>.json
-```
-
-After `cargo install --path crates/aegis-cli`:
+### Planning (read-only)
 
 ```bash
 aegis doctor
+aegis apt update --plan
 aegis apt upgrade --plan
+aegis apt install nginx --plan
 aegis npm install lodash --plan
+aegis pip install requests --plan
+aegis docker pull ubuntu:latest --plan
+aegis container pull ghcr.io/org/image@sha256:<digest> --plan
+aegis nuget install Newtonsoft.Json --plan
+aegis vscode install ms-python.python --plan
+aegis go get github.com/gin-gonic/gin@v1.10.0 --plan
+aegis cargo install ripgrep --plan
+```
+
+### AI Review and Policy
+
+```bash
 aegis review ~/.local/share/aegis/plans/<plan-id>.json
 aegis policy ~/.local/share/aegis/plans/<plan-id>.json
 ```
 
-## Policy Configuration
+### Signed Execution Plans
 
-The policy engine loads configuration from (in priority order):
+```bash
+aegisctl keygen
+aegisctl sign --plan <plan.json> --policy <policy.json> --key-id <id> --signer <identity>
+aegisctl verify --execution-plan <exec-plan.json> --public-key-hex <hex>
+aegisctl apply --execution-plan <exec-plan.json> --public-key-hex <hex>
+aegisctl audit-path
+```
 
-1. `$AEGIS_POLICY_FILE` environment variable
-2. `$XDG_CONFIG_HOME/aegis/policy.toml`
-3. `$HOME/.config/aegis/policy.toml`
-4. `policies/default-policy.toml` (from the working directory)
+### Production Daemons
 
-See `policies/default-policy.toml` for the available options.
+```bash
+# Root execution gate (runs as root with systemd hardening)
+aegisd --public-key-hex <hex>
+
+# Unprivileged AI reviewer
+aegis-reviewd
+```
 
 ## Development
 
 Prerequisites:
 
-- Rust stable, with `rustfmt` and `clippy`
+- Rust stable (MSRV 1.85), with `rustfmt` and `clippy`
 - Ubuntu-compatible package tools for the ecosystems you want to inspect
 - Optional local OpenAI-compatible model endpoint for `aegis review`
-
-Check the repo:
 
 ```bash
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-```
-
-`--apply` exists but is intentionally disabled:
-
-```text
-apply is not implemented in MVP; only signed plan generation is supported
+cargo build --release
 ```
 
 ## What Planning May Run
@@ -203,15 +198,20 @@ Policy results are written to:
 ~/.local/share/aegis/policy/<plan_id>.policy.json
 ```
 
-## MVP Limitations
+Tamper-evident audit events are appended to:
 
-- No production daemon.
-- No privileged root executor.
-- No signed execution plan implementation yet.
-- No `--apply` implementation.
-- Apt parsing is best-effort over dry-run output.
-- Npm planning inspects registry metadata only and never installs.
-- New ecosystem adapters collect shallow metadata only; they do not implement full supply-chain intelligence.
+```text
+~/.local/share/aegis/audit/audit.ndjson
+```
+
+Each audit event contains a SHA-256 hash chain linking it to the previous event.
+
+## Current Limitations
+
+- Production apply is APT-only (`apt-get update`, `apt-get upgrade`, `apt-get install`).
+- Ecosystem adapters (npm, pip, container, NuGet, VS Code, Go, Cargo) are plan-only — they collect metadata but do not install.
+- Single-threaded daemon handlers (adequate for local use).
+- APT dry-run parsing is best-effort over `apt-get -s` output.
 - AI review requires a reachable local OpenAI-compatible endpoint.
 
 ## Open Source
@@ -222,8 +222,8 @@ Security reports should follow [SECURITY.md](SECURITY.md). Contributions should 
 
 ## Next Steps
 
-- Add signed execution plans.
-- Add a constrained root executor that accepts only signed, policy-approved argv.
+- Extend production executor to npm, pip, and other ecosystems.
 - Add richer package and artifact metadata parsers.
 - Add repository trust and snapshot integration.
-- Add a full audit log chain with tamper-evident hashes.
+- Add rollback plan execution.
+- Add multi-platform CI matrix.

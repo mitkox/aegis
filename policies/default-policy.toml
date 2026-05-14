@@ -1,9 +1,2 @@
-# Aegis default policy configuration.
-#
-# Override location: set $AEGIS_POLICY_FILE or place at
-# $XDG_CONFIG_HOME/aegis/policy.toml (~/.config/aegis/policy.toml).
-
 [apt]
-# When false (default), any plan that removes packages is denied outright.
-# When true, package removals require human approval instead of being denied.
 allow_removals = false

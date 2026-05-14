@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Aegis. This project is security-sensitive: changes should preserve the plan-only MVP boundary and the deterministic policy model.
+Thanks for helping improve Aegis. This project is security-sensitive: changes must preserve the production security boundary and the deterministic policy model.
 
 ## Development
 
@@ -23,4 +23,4 @@ cargo test
 
 ## Scope
 
-The current MVP is for visibility, planning, review, and deterministic policy. Do not add `--apply` execution in the same change as a new package ecosystem adapter.
+Aegis supports read-only planning, review, deterministic policy, signed execution plans, and constrained production execution through `aegisctl` and `aegisd`. Do not add production apply support in the same change as a new package ecosystem adapter.

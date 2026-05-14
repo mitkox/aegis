@@ -1,41 +1,46 @@
 #![forbid(unsafe_code)]
 
-//! Deterministic policy engine for Aegis operation plans.
-//!
-//! This crate evaluates an [`OperationPlan`] against a [`PolicyConfig`] and
-//! returns a [`PolicyResult`] with a decision, reasons, and required controls.
-//! The policy engine is fully deterministic — it never calls external services
-//! or uses AI judgement.
-
 use aegis_core::{has_shell_metacharacters, OperationPlan, PolicyDecision, PolicyResult, Tool};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
-/// Policy configuration loaded from a TOML file.
+pub const POLICY_VERSION: &str = "0.2.5";
+
+/// A deterministic identifier for this evaluator build.
 ///
-/// Currently only the `[apt]` section is supported. Other ecosystems use
-/// built-in defaults. See `policies/default-policy.toml` for the schema.
+/// In production this should be the SHA-256 of the evaluator binary.
+/// For MVP we use a compile-time constant tied to the source version.
+pub const EVALUATOR_HASH: &str = "aegis-policy-0.2.5";
+
+fn result(
+    decision: PolicyDecision,
+    reasons: Vec<String>,
+    required_controls: Vec<String>,
+) -> PolicyResult {
+    PolicyResult {
+        decision,
+        reasons,
+        required_controls,
+        policy_version: POLICY_VERSION.to_string(),
+        evaluator_hash: EVALUATOR_HASH.to_string(),
+        evidence_fresh_until: None,
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PolicyConfig {
-    /// Apt-specific policy settings.
     #[serde(default)]
     pub apt: AptPolicyConfig,
 }
 
-/// Apt-specific policy configuration.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AptPolicyConfig {
-    /// When `false` (default), any plan that removes apt packages is denied.
-    /// When `true`, removals require human approval instead of being denied.
     #[serde(default)]
     pub allow_removals: bool,
 }
 
-/// Load policy configuration from a TOML file.
-///
-/// Returns [`PolicyConfig::default()`] if the file does not exist.
 pub fn load_policy_config(path: impl AsRef<Path>) -> Result<PolicyConfig> {
     let path = path.as_ref();
     if !path.exists() {
@@ -45,12 +50,6 @@ pub fn load_policy_config(path: impl AsRef<Path>) -> Result<PolicyConfig> {
     toml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
 }
 
-/// Evaluate an operation plan against the policy configuration.
-///
-/// Returns a [`PolicyResult`] with the deterministic decision. Evaluation
-/// order: deny checks first, then risk-signal checks that require human
-/// approval, then ecosystem-specific allow rules, and finally a fallback
-/// `RequireHuman` for any uncovered operation.
 pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
     let mut deny_reasons = Vec::new();
     let mut human_reasons = Vec::new();
@@ -114,11 +113,7 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
     }
 
     if !deny_reasons.is_empty() {
-        return PolicyResult {
-            decision: PolicyDecision::Deny,
-            reasons: deny_reasons,
-            required_controls: controls,
-        };
+        return result(PolicyDecision::Deny, deny_reasons, controls);
     }
 
     for signal in &plan.risk_signals {
@@ -225,22 +220,18 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
 
     if !human_reasons.is_empty() {
         controls.push("human approval".to_string());
-        return PolicyResult {
-            decision: PolicyDecision::RequireHuman,
-            reasons: dedup(human_reasons),
-            required_controls: controls,
-        };
+        return result(PolicyDecision::RequireHuman, dedup(human_reasons), controls);
     }
 
     if matches!(plan.tool, Tool::Apt)
         && plan.operation == "upgrade"
         && !plan.packages_removed.is_empty()
     {
-        return PolicyResult {
-            decision: PolicyDecision::RequireHuman,
-            reasons: vec!["apt upgrade includes removals".into()],
-            required_controls: vec!["human approval".into()],
-        };
+        return result(
+            PolicyDecision::RequireHuman,
+            vec!["apt upgrade includes removals".into()],
+            vec!["human approval".into()],
+        );
     }
 
     if matches!(plan.tool, Tool::Apt)
@@ -249,50 +240,48 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
         && !plan.risk_signals.iter().any(|s| s == "kernel-change")
         && !plan.risk_signals.iter().any(|s| s == "security-sensitive")
     {
-        return PolicyResult {
-            decision: PolicyDecision::AllowWithSnapshot,
-            reasons: vec![
-                "apt dry-run upgrade has no removals or sensitive package changes".into(),
-            ],
-            required_controls: vec!["system snapshot".into()],
-        };
+        return result(
+            PolicyDecision::AllowWithSnapshot,
+            vec!["apt dry-run upgrade has no removals or sensitive package changes".into()],
+            vec!["system snapshot".into()],
+        );
     }
 
     if matches!(plan.tool, Tool::Npm) {
-        return PolicyResult {
-            decision: PolicyDecision::Allow,
-            reasons: vec!["npm metadata inspection only; MVP does not install packages".into()],
-            required_controls: controls,
-        };
+        return result(
+            PolicyDecision::Allow,
+            vec!["npm metadata inspection only; MVP does not install packages".into()],
+            controls,
+        );
     }
 
     if matches!(
         plan.tool,
         Tool::Pip | Tool::Nuget | Tool::Vscode | Tool::Cargo | Tool::Container | Tool::Go
     ) {
-        return PolicyResult {
-            decision: PolicyDecision::Allow,
-            reasons: vec![format!(
+        return result(
+            PolicyDecision::Allow,
+            vec![format!(
                 "{} metadata-only plan has no policy-blocking risk signals",
                 plan.ecosystem.as_deref().unwrap_or("ecosystem")
             )],
-            required_controls: controls,
-        };
+            controls,
+        );
     }
 
     if matches!(plan.tool, Tool::Apt) && plan.operation == "update" {
-        return PolicyResult {
-            decision: PolicyDecision::Allow,
-            reasons: vec!["apt update is plan-only in MVP".into()],
-            required_controls: controls,
-        };
+        return result(
+            PolicyDecision::Allow,
+            vec!["apt update is plan-only in MVP".into()],
+            controls,
+        );
     }
 
-    PolicyResult {
-        decision: PolicyDecision::RequireHuman,
-        reasons: vec!["operation is not covered by an allow rule".into()],
-        required_controls: vec!["human approval".into()],
-    }
+    result(
+        PolicyDecision::RequireHuman,
+        vec!["operation is not covered by an allow rule".into()],
+        vec!["human approval".into()],
+    )
 }
 
 fn scripts_text(plan: &OperationPlan) -> String {
