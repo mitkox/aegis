@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-05-14
+
+### Added
+
+- Policy results are bound to the exact operation plan with `plan_hash`.
+- Signed execution plans now embed the operation plan, policy result, optional AI review hash, and required-control proofs.
+- `aegis policy --review <review.json>` consumes AI review output as a one-way restrictive signal.
+- Real Ed25519 human approval signatures with separate approval keys.
+- Executor preflight checks for embedded plan/policy hash consistency, policy freshness, required snapshot proofs, and trusted approval signatures.
+- `AEGIS_AUDIT_LOG_DIR` and `aegisctl audit-verify` for audit-chain verification.
+
+### Changed
+
+- `aegisctl sign` re-runs deterministic policy and rejects supplied policy files that do not match the exact plan and optional review.
+- Non-APT production apply is denied by default when artifacts are mutable or lack pinned/verified evidence; APT remains the primary production path.
+
+### Fixed
+
+- Placeholder human approval signatures are no longer accepted.
+
 ## [0.2.6] - 2026-05-14
 
 ### Added
@@ -85,7 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AI model is reviewer-only — never executes, approves, or generates commands.
 - Production apply uses exact argv matching.
 
-[Unreleased]: https://github.com/mitkox/aegis/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/mitkox/aegis/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/mitkox/aegis/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/mitkox/aegis/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/mitkox/aegis/compare/v0.1.0...v0.2.5
 [0.1.0]: https://github.com/mitkox/aegis/releases/tag/v0.1.0

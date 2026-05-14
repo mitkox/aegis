@@ -5,13 +5,11 @@
 //! Signing is deterministic over canonical JSON with the plan signature field
 //! removed. The model never participates in signing or argv generation.
 
-use aegis_core::{ExecutionPlan, SignatureEnvelope};
+use aegis_core::{Approval, ExecutionPlan, SignatureEnvelope};
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::Serialize;
-use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::io::Read;
 
 pub const SIGNATURE_ALGORITHM: &str = "ed25519";
@@ -36,8 +34,7 @@ pub fn generate_keypair() -> Result<GeneratedKeypair> {
 }
 
 pub fn sha256_hex<T: Serialize>(value: &T) -> Result<String> {
-    let bytes = canonical_json_bytes(value)?;
-    Ok(hex::encode(Sha256::digest(bytes)))
+    aegis_core::sha256_hex(value).context("hashing canonical JSON")
 }
 
 pub fn sign_execution_plan(
@@ -80,15 +77,54 @@ pub fn verify_execution_plan(plan: &ExecutionPlan, public_key_hex: &str) -> Resu
         .context("execution plan signature verification failed")
 }
 
+pub fn sign_approval(
+    approval: &mut Approval,
+    key_id: impl Into<String>,
+    secret_key_hex: &str,
+) -> Result<()> {
+    let key = signing_key_from_hex(secret_key_hex)?;
+    approval.signature = None;
+    let payload = canonical_json_bytes(approval)?;
+    let signature = key.sign(&payload);
+    approval.signature = Some(SignatureEnvelope {
+        algorithm: SIGNATURE_ALGORITHM.to_string(),
+        key_id: key_id.into(),
+        signature: BASE64.encode(signature.to_bytes()),
+    });
+    Ok(())
+}
+
+pub fn verify_approval(approval: &Approval, public_key_hex: &str) -> Result<()> {
+    let envelope = approval
+        .signature
+        .as_ref()
+        .ok_or_else(|| anyhow!("approval is unsigned"))?;
+    if envelope.algorithm != SIGNATURE_ALGORITHM {
+        return Err(anyhow!(
+            "unsupported approval signature algorithm {}",
+            envelope.algorithm
+        ));
+    }
+    let key = verifying_key_from_hex(public_key_hex)?;
+    let mut unsigned = approval.clone();
+    unsigned.signature = None;
+    let payload = canonical_json_bytes(&unsigned)?;
+    let signature_bytes = BASE64
+        .decode(&envelope.signature)
+        .context("decoding approval signature")?;
+    let signature =
+        Signature::from_slice(&signature_bytes).context("parsing approval signature")?;
+    key.verify(&payload, &signature)
+        .context("approval signature verification failed")
+}
+
 pub fn public_key_from_secret_hex(secret_key_hex: &str) -> Result<String> {
     let key = signing_key_from_hex(secret_key_hex)?;
     Ok(hex::encode(key.verifying_key().to_bytes()))
 }
 
 pub fn canonical_json_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    let value = serde_json::to_value(value).context("serializing value for signing")?;
-    let sorted = sort_json(value);
-    serde_json::to_vec(&sorted).context("encoding canonical JSON")
+    aegis_core::canonical_json_bytes(value).context("encoding canonical JSON")
 }
 
 fn signing_key_from_hex(secret_key_hex: &str) -> Result<SigningKey> {
@@ -107,22 +143,6 @@ fn verifying_key_from_hex(public_key_hex: &str) -> Result<VerifyingKey> {
     VerifyingKey::from_bytes(&key_bytes).context("parsing Ed25519 public key")
 }
 
-fn sort_json(value: Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.into_iter().map(sort_json).collect()),
-        Value::Object(map) => {
-            let mut sorted = serde_json::Map::new();
-            let mut entries = map.into_iter().collect::<Vec<_>>();
-            entries.sort_by(|a, b| a.0.cmp(&b.0));
-            for (key, value) in entries {
-                sorted.insert(key, sort_json(value));
-            }
-            Value::Object(sorted)
-        }
-        scalar => scalar,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,12 +153,14 @@ mod tests {
     #[test]
     fn signs_and_verifies_execution_plan() {
         let op = OperationPlan::new(Tool::Apt, "upgrade", None);
+        let op_hash = sha256_hex(&op).unwrap();
         let policy = PolicyResult {
             decision: PolicyDecision::AllowWithSnapshot,
             reasons: vec!["ok".into()],
             required_controls: vec!["system snapshot".into()],
             policy_version: "test".into(),
             evaluator_hash: "test-hash".into(),
+            plan_hash: op_hash.clone(),
             evidence_fresh_until: None,
         };
         let mut plan = ExecutionPlan::new(
@@ -147,7 +169,7 @@ mod tests {
             vec!["apt-get".into(), "upgrade".into()],
             "local-admin",
             "2999-01-01T00:00:00Z",
-            sha256_hex(&op).unwrap(),
+            op_hash,
             sha256_hex(&policy).unwrap(),
         );
         sign_execution_plan(&mut plan, "test-key", SECRET).unwrap();
@@ -159,12 +181,14 @@ mod tests {
     fn generated_keypair_can_sign_and_verify() {
         let keypair = generate_keypair().unwrap();
         let op = OperationPlan::new(Tool::Apt, "update", None);
+        let op_hash = sha256_hex(&op).unwrap();
         let policy = PolicyResult {
             decision: PolicyDecision::Allow,
             reasons: vec!["ok".into()],
             required_controls: Vec::new(),
             policy_version: "test".into(),
             evaluator_hash: "test-hash".into(),
+            plan_hash: op_hash.clone(),
             evidence_fresh_until: None,
         };
         let mut plan = ExecutionPlan::new(
@@ -173,10 +197,30 @@ mod tests {
             vec!["apt-get".into(), "update".into()],
             "local-admin",
             "2999-01-01T00:00:00Z",
-            sha256_hex(&op).unwrap(),
+            op_hash,
             sha256_hex(&policy).unwrap(),
         );
         sign_execution_plan(&mut plan, "generated-test-key", &keypair.secret_key_hex).unwrap();
         verify_execution_plan(&plan, &keypair.public_key_hex).unwrap();
+    }
+
+    #[test]
+    fn signs_and_verifies_approval() {
+        let mut approval = Approval {
+            signer: "alice".into(),
+            role: "human-approver".into(),
+            reason: "reviewed high-risk change".into(),
+            approved_at: "2026-05-14T00:00:00Z".into(),
+            expires_at: "2999-01-01T00:00:00Z".into(),
+            plan_hash: "plan-hash".into(),
+            signature: None,
+        };
+        sign_approval(&mut approval, "approval-key", SECRET).unwrap();
+        let public = public_key_from_secret_hex(SECRET).unwrap();
+        verify_approval(&approval, &public).unwrap();
+
+        let mut tampered = approval.clone();
+        tampered.reason = "changed".into();
+        assert!(verify_approval(&tampered, &public).is_err());
     }
 }

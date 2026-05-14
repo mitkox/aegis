@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use aegis_ai::ReviewOutcome;
-use aegis_core::OperationPlan;
+use aegis_core::{AiReview, OperationPlan};
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use std::fs;
@@ -67,6 +67,8 @@ enum Commands {
     },
     Policy {
         plan_file: PathBuf,
+        #[arg(long)]
+        review: Option<PathBuf>,
     },
 }
 
@@ -204,7 +206,7 @@ fn main() -> Result<()> {
         Commands::Go { command } => handle_go(command),
         Commands::Cargo { command } => handle_cargo(command),
         Commands::Review { plan_file } => review(&plan_file),
-        Commands::Policy { plan_file } => policy(&plan_file),
+        Commands::Policy { plan_file, review } => policy(&plan_file, review.as_deref()),
     }
 }
 
@@ -395,6 +397,11 @@ fn read_plan(path: &Path) -> Result<OperationPlan> {
     serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
 }
 
+fn read_review(path: &Path) -> Result<AiReview> {
+    let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
+}
+
 fn review(plan_file: &Path) -> Result<()> {
     aegis_audit::ensure_dirs()?;
     let plan = read_plan(plan_file)?;
@@ -421,12 +428,13 @@ fn review(plan_file: &Path) -> Result<()> {
     }
 }
 
-fn policy(plan_file: &Path) -> Result<()> {
+fn policy(plan_file: &Path, review_file: Option<&Path>) -> Result<()> {
     aegis_audit::ensure_dirs()?;
     let plan = read_plan(plan_file)?;
+    let review = review_file.map(read_review).transpose()?;
     let config_path = policy_config_path();
     let config = aegis_policy::load_policy_config(&config_path)?;
-    let result = aegis_policy::evaluate(&plan, &config);
+    let result = aegis_policy::evaluate_with_review(&plan, &config, review.as_ref())?;
     let filename = format!("{}.policy.json", plan.plan_id);
     let path = aegis_audit::write_json(aegis_audit::policy_dir()?, &filename, &result)?;
     println!("{}", serde_json::to_string_pretty(&result)?);

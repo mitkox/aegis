@@ -19,6 +19,9 @@
     "approvals",
     "operation_plan_hash",
     "policy_result_hash",
+    "operation_plan",
+    "policy_result",
+    "control_proofs",
     "signature"
   ],
   "properties": {
@@ -36,9 +39,49 @@
     "signer_identity": { "type": "string" },
     "created_at": { "type": "string" },
     "expires_at": { "type": "string" },
-    "approvals": { "type": "array", "items": { "type": "object" } },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["signer", "role", "reason", "approved_at", "expires_at", "plan_hash", "signature"],
+        "properties": {
+          "signer": { "type": "string" },
+          "role": { "type": "string" },
+          "reason": { "type": "string" },
+          "approved_at": { "type": "string" },
+          "expires_at": { "type": "string" },
+          "plan_hash": { "type": "string" },
+          "signature": {
+            "type": "object",
+            "required": ["algorithm", "key_id", "signature"],
+            "properties": {
+              "algorithm": { "type": "string" },
+              "key_id": { "type": "string" },
+              "signature": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
     "operation_plan_hash": { "type": "string" },
     "policy_result_hash": { "type": "string" },
+    "operation_plan": { "type": "object" },
+    "policy_result": { "type": "object" },
+    "control_proofs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["control", "proof_type", "value", "created_at"],
+        "properties": {
+          "control": { "type": "string" },
+          "proof_type": { "type": "string" },
+          "value": { "type": "string" },
+          "created_at": { "type": "string" },
+          "expires_at": { "type": "string" }
+        }
+      }
+    },
+    "ai_review_hash": { "type": "string" },
     "signature": {
       "type": "object",
       "required": ["algorithm", "key_id", "signature"],

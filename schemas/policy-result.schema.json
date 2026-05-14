@@ -2,13 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Aegis PolicyResult",
   "type": "object",
-  "required": ["decision", "reasons", "required_controls", "policy_version", "evaluator_hash"],
+  "required": [
+    "decision",
+    "reasons",
+    "required_controls",
+    "policy_version",
+    "evaluator_hash",
+    "plan_hash"
+  ],
   "properties": {
     "decision": { "enum": ["allow", "allow_with_snapshot", "require_human", "deny"] },
     "reasons": { "type": "array", "items": { "type": "string" } },
     "required_controls": { "type": "array", "items": { "type": "string" } },
     "policy_version": { "type": "string" },
     "evaluator_hash": { "type": "string" },
+    "plan_hash": { "type": "string" },
     "evidence_fresh_until": { "type": "string" }
   }
 }

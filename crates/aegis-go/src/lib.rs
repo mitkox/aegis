@@ -204,8 +204,8 @@ mod tests {
                 ..GoEnv::default()
             },
         );
-        let result = evaluate(&plan, &PolicyConfig::default());
-        assert_eq!(result.decision, aegis_core::PolicyDecision::RequireHuman);
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
+        assert_eq!(result.decision, aegis_core::PolicyDecision::Deny);
     }
 
     #[test]
@@ -219,7 +219,7 @@ mod tests {
                 ..GoEnv::default()
             },
         );
-        let result = evaluate(&plan, &PolicyConfig::default());
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
         assert!(matches!(
             result.decision,
             aegis_core::PolicyDecision::Allow | aegis_core::PolicyDecision::AllowWithSnapshot
@@ -236,8 +236,8 @@ mod tests {
                 ..GoEnv::default()
             },
         );
-        let result = evaluate(&plan, &PolicyConfig::default());
-        assert_eq!(result.decision, aegis_core::PolicyDecision::RequireHuman);
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
+        assert_eq!(result.decision, aegis_core::PolicyDecision::Deny);
     }
 
     #[test]

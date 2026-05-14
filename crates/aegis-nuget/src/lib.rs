@@ -139,8 +139,11 @@ mod tests {
     #[test]
     fn aspnet_identity_requires_human() {
         let plan = base_plan("Microsoft.AspNetCore.Identity");
-        let result = evaluate(&plan, &PolicyConfig::default());
-        assert_eq!(result.decision, aegis_core::PolicyDecision::RequireHuman);
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
+        assert!(matches!(
+            result.decision,
+            aegis_core::PolicyDecision::RequireHuman | aegis_core::PolicyDecision::Deny
+        ));
     }
 
     #[test]
@@ -151,8 +154,11 @@ mod tests {
         .unwrap();
         let mut plan = base_plan("BuildTargets.Package");
         enrich_plan_from_metadata(&mut plan, &fixture);
-        let result = evaluate(&plan, &PolicyConfig::default());
-        assert_eq!(result.decision, aegis_core::PolicyDecision::RequireHuman);
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
+        assert!(matches!(
+            result.decision,
+            aegis_core::PolicyDecision::RequireHuman | aegis_core::PolicyDecision::Deny
+        ));
     }
 
     #[test]
@@ -163,7 +169,7 @@ mod tests {
         .unwrap();
         let mut plan = base_plan("PowerShell.Package");
         enrich_plan_from_metadata(&mut plan, &fixture);
-        let result = evaluate(&plan, &PolicyConfig::default());
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
         assert!(matches!(
             result.decision,
             aegis_core::PolicyDecision::RequireHuman | aegis_core::PolicyDecision::Deny

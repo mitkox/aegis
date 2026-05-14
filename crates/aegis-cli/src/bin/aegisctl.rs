@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use aegis_core::{
-    Approval, ExecutionPlan, OperationPlan, PolicyDecision, PolicyResult, SignatureEnvelope,
+    AiReview, Approval, ControlProof, ExecutionPlan, OperationPlan, PolicyDecision, PolicyResult,
 };
 use anyhow::{bail, Context, Result};
 use chrono::{Duration, Utc};
@@ -34,6 +34,8 @@ enum Command {
         #[arg(long)]
         policy: PathBuf,
         #[arg(long)]
+        review: Option<PathBuf>,
+        #[arg(long)]
         secret_key_hex: Option<String>,
         #[arg(long)]
         key_id: String,
@@ -41,6 +43,14 @@ enum Command {
         signer: String,
         #[arg(long)]
         approval_reason: Option<String>,
+        #[arg(long)]
+        approval_secret_key_hex: Option<String>,
+        #[arg(long)]
+        approval_key_id: Option<String>,
+        #[arg(long)]
+        approver: Option<String>,
+        #[arg(long)]
+        snapshot_id: Option<String>,
         #[arg(long, default_value_t = 30)]
         expires_in_minutes: i64,
         #[arg(long)]
@@ -52,6 +62,8 @@ enum Command {
         execution_plan: PathBuf,
         #[arg(long)]
         public_key_hex: String,
+        #[arg(long)]
+        approval_public_key_hex: Vec<String>,
         #[arg(long, default_value = "/run/aegis/aegisd.sock")]
         socket: PathBuf,
     },
@@ -61,20 +73,32 @@ enum Command {
         execution_plan: PathBuf,
         #[arg(long)]
         public_key_hex: String,
+        #[arg(long)]
+        approval_public_key_hex: Vec<String>,
     },
     /// Generate an Ed25519 signing keypair for execution-plan signing.
     Keygen,
     /// Print the production audit log path.
     AuditPath,
+    /// Verify the tamper-evident audit hash chain.
+    AuditVerify {
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
 }
 
 struct SignRequest {
     plan_path: PathBuf,
     policy_path: PathBuf,
+    review_path: Option<PathBuf>,
     secret_key_hex: Option<String>,
     key_id: String,
     signer: String,
     approval_reason: Option<String>,
+    approval_secret_key_hex: Option<String>,
+    approval_key_id: Option<String>,
+    approver: Option<String>,
+    snapshot_id: Option<String>,
     expires_in_minutes: i64,
     out: Option<PathBuf>,
 }
@@ -84,58 +108,89 @@ fn main() -> Result<()> {
         Command::Sign {
             plan,
             policy,
+            review,
             secret_key_hex,
             key_id,
             signer,
             approval_reason,
+            approval_secret_key_hex,
+            approval_key_id,
+            approver,
+            snapshot_id,
             expires_in_minutes,
             out,
         } => sign(SignRequest {
             plan_path: plan,
             policy_path: policy,
+            review_path: review,
             secret_key_hex,
             key_id,
             signer,
             approval_reason,
+            approval_secret_key_hex,
+            approval_key_id,
+            approver,
+            snapshot_id,
             expires_in_minutes,
             out,
         }),
         Command::Apply {
             execution_plan,
             public_key_hex,
+            approval_public_key_hex,
             socket,
-        } => apply(&execution_plan, &public_key_hex, &socket),
+        } => apply(
+            &execution_plan,
+            &public_key_hex,
+            &approval_public_key_hex,
+            &socket,
+        ),
         Command::Verify {
             execution_plan,
             public_key_hex,
-        } => verify(&execution_plan, &public_key_hex),
+            approval_public_key_hex,
+        } => verify(&execution_plan, &public_key_hex, &approval_public_key_hex),
         Command::Keygen => keygen(),
         Command::AuditPath => {
-            println!("{}", aegis_audit::audit_log_dir().display());
+            println!("{}", aegis_audit::audit_log_path().display());
             Ok(())
         }
+        Command::AuditVerify { path } => audit_verify(path.as_deref()),
     }
 }
 
 fn sign(request: SignRequest) -> Result<()> {
     let plan: OperationPlan = read_json(&request.plan_path)?;
     let policy: PolicyResult = read_json(&request.policy_path)?;
+    let review: Option<AiReview> = request
+        .review_path
+        .as_ref()
+        .map(|path| read_json(path))
+        .transpose()?;
     validate_policy_result_version(&policy)?;
+    validate_policy_matches_plan(&plan, &policy, review.as_ref())?;
     if policy.decision == PolicyDecision::Deny {
         bail!(
             "refusing to sign denied policy result: {}",
             policy.reasons.join("; ")
         );
     }
-    if policy.decision == PolicyDecision::RequireHuman && request.approval_reason.is_none() {
+    if requires_human_approval(&policy) && request.approval_reason.is_none() {
         bail!("policy requires human approval; pass --approval-reason");
+    }
+    if requires_system_snapshot(&policy) && request.snapshot_id.is_none() {
+        bail!("policy requires a system snapshot proof; pass --snapshot-id");
     }
     let secret = request
         .secret_key_hex
+        .clone()
         .or_else(|| std::env::var("AEGIS_SIGNING_SECRET_KEY_HEX").ok())
         .context("missing --secret-key-hex or AEGIS_SIGNING_SECRET_KEY_HEX")?;
     let expires_at = (Utc::now() + Duration::minutes(request.expires_in_minutes)).to_rfc3339();
     let op_hash = aegis_signing::sha256_hex(&plan)?;
+    if policy.plan_hash != op_hash {
+        bail!("policy result plan_hash does not match operation plan");
+    }
     let policy_hash = aegis_signing::sha256_hex(&policy)?;
     let argv = execution_argv_from_plan(&plan)?;
     let mut execution_plan = ExecutionPlan::new(
@@ -147,20 +202,14 @@ fn sign(request: SignRequest) -> Result<()> {
         op_hash.clone(),
         policy_hash,
     );
-    if let Some(reason) = request.approval_reason {
-        execution_plan.approvals.push(Approval {
-            signer: request.signer.clone(),
-            reason,
-            approved_at: Utc::now().to_rfc3339(),
-            expires_at,
-            plan_hash: op_hash,
-            signature: SignatureEnvelope {
-                algorithm: "ed25519".into(),
-                key_id: request.key_id.clone(),
-                signature: "covered-by-execution-plan-signature".into(),
-            },
-        });
-    }
+    execution_plan.ai_review_hash = review.as_ref().map(aegis_signing::sha256_hex).transpose()?;
+    attach_required_control_proofs(
+        &mut execution_plan,
+        &request,
+        &secret,
+        &op_hash,
+        &expires_at,
+    )?;
     aegis_signing::sign_execution_plan(&mut execution_plan, request.key_id, &secret)?;
     aegis_executor::preflight_execution_plan(&execution_plan)?;
     let raw = serde_json::to_string_pretty(&execution_plan)?;
@@ -172,10 +221,16 @@ fn sign(request: SignRequest) -> Result<()> {
     Ok(())
 }
 
-fn apply(path: &Path, public_key_hex: &str, socket: &Path) -> Result<()> {
+fn apply(
+    path: &Path,
+    public_key_hex: &str,
+    approval_public_key_hex: &[String],
+    socket: &Path,
+) -> Result<()> {
     let plan: ExecutionPlan = read_json(path)?;
     aegis_signing::verify_execution_plan(&plan, public_key_hex)?;
-    aegis_executor::preflight_execution_plan(&plan)?;
+    let approval_keys = approval_public_keys(approval_public_key_hex);
+    aegis_executor::preflight_execution_plan_with_approval_keys(&plan, &approval_keys)?;
     let mut stream =
         UnixStream::connect(socket).with_context(|| format!("connecting {}", socket.display()))?;
     stream
@@ -193,11 +248,21 @@ fn apply(path: &Path, public_key_hex: &str, socket: &Path) -> Result<()> {
     Ok(())
 }
 
-fn verify(path: &Path, public_key_hex: &str) -> Result<()> {
+fn verify(path: &Path, public_key_hex: &str, approval_public_key_hex: &[String]) -> Result<()> {
     let plan: ExecutionPlan = read_json(path)?;
     aegis_signing::verify_execution_plan(&plan, public_key_hex)?;
-    aegis_executor::preflight_execution_plan(&plan)?;
+    let approval_keys = approval_public_keys(approval_public_key_hex);
+    aegis_executor::preflight_execution_plan_with_approval_keys(&plan, &approval_keys)?;
     println!("ok: execution plan signature and preflight are valid");
+    Ok(())
+}
+
+fn audit_verify(path: Option<&Path>) -> Result<()> {
+    let result = match path {
+        Some(path) => aegis_audit::verify_audit_log_path(path)?,
+        None => aegis_audit::verify_audit_log()?,
+    };
+    println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
 }
 
@@ -212,6 +277,128 @@ fn keygen() -> Result<()> {
         }))?
     );
     Ok(())
+}
+
+fn validate_policy_matches_plan(
+    plan: &OperationPlan,
+    policy: &PolicyResult,
+    review: Option<&AiReview>,
+) -> Result<()> {
+    let config = aegis_policy::load_policy_config(policy_config_path())?;
+    let expected = aegis_policy::evaluate_with_review(plan, &config, review)?;
+    if &expected != policy {
+        bail!("supplied policy result does not match deterministic evaluation for this exact plan");
+    }
+    Ok(())
+}
+
+fn attach_required_control_proofs(
+    execution_plan: &mut ExecutionPlan,
+    request: &SignRequest,
+    execution_secret_key_hex: &str,
+    operation_plan_hash: &str,
+    expires_at: &str,
+) -> Result<()> {
+    if requires_system_snapshot(&execution_plan.policy_result) {
+        let snapshot_id = request
+            .snapshot_id
+            .clone()
+            .context("policy requires a system snapshot proof; pass --snapshot-id")?;
+        execution_plan.control_proofs.push(ControlProof {
+            control: "system snapshot".into(),
+            proof_type: "snapshot-id".into(),
+            value: snapshot_id,
+            created_at: Utc::now().to_rfc3339(),
+            expires_at: Some(expires_at.to_string()),
+        });
+    }
+
+    if requires_human_approval(&execution_plan.policy_result) {
+        let reason = request
+            .approval_reason
+            .clone()
+            .context("policy requires human approval; pass --approval-reason")?;
+        let approval_secret = request
+            .approval_secret_key_hex
+            .clone()
+            .or_else(|| std::env::var("AEGIS_APPROVAL_SECRET_KEY_HEX").ok())
+            .context(
+                "missing --approval-secret-key-hex or AEGIS_APPROVAL_SECRET_KEY_HEX for human approval",
+            )?;
+        let execution_public = aegis_signing::public_key_from_secret_hex(execution_secret_key_hex)?;
+        let approval_public = aegis_signing::public_key_from_secret_hex(&approval_secret)?;
+        if execution_public == approval_public {
+            bail!("human approval key must be distinct from the execution signing key");
+        }
+        let approval_key_id = request
+            .approval_key_id
+            .clone()
+            .context("human approval requires --approval-key-id")?;
+        let mut approval = Approval {
+            signer: request
+                .approver
+                .clone()
+                .unwrap_or_else(|| request.signer.clone()),
+            role: "human-approver".into(),
+            reason,
+            approved_at: Utc::now().to_rfc3339(),
+            expires_at: expires_at.to_string(),
+            plan_hash: operation_plan_hash.to_string(),
+            signature: None,
+        };
+        aegis_signing::sign_approval(&mut approval, approval_key_id, &approval_secret)?;
+        execution_plan.approvals.push(approval);
+    }
+    Ok(())
+}
+
+fn requires_human_approval(policy: &PolicyResult) -> bool {
+    policy.decision == PolicyDecision::RequireHuman
+        || policy
+            .required_controls
+            .iter()
+            .any(|control| control == "human approval")
+}
+
+fn requires_system_snapshot(policy: &PolicyResult) -> bool {
+    policy.decision == PolicyDecision::AllowWithSnapshot
+        || policy
+            .required_controls
+            .iter()
+            .any(|control| control == "system snapshot")
+}
+
+fn approval_public_keys(cli_keys: &[String]) -> Vec<String> {
+    let mut keys = cli_keys.to_vec();
+    if let Ok(raw) = std::env::var("AEGIS_APPROVAL_PUBLIC_KEY_HEX") {
+        keys.extend(
+            raw.split(|c: char| c == ',' || c == ';' || c.is_whitespace())
+                .filter(|part| !part.trim().is_empty())
+                .map(|part| part.trim().to_string()),
+        );
+    }
+    keys
+}
+
+fn policy_config_path() -> PathBuf {
+    if let Ok(path) = std::env::var("AEGIS_POLICY_CONFIG") {
+        return PathBuf::from(path);
+    }
+    let xdg = std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+            PathBuf::from(home).join(".config")
+        });
+    let xdg_path = xdg.join("aegis/policy.toml");
+    if xdg_path.exists() {
+        return xdg_path;
+    }
+    let etc_path = PathBuf::from("/etc/aegis/policy.toml");
+    if etc_path.exists() {
+        return etc_path;
+    }
+    PathBuf::from("policies/default-policy.toml")
 }
 
 fn execution_argv_from_plan(plan: &OperationPlan) -> Result<Vec<String>> {
@@ -485,6 +672,7 @@ mod tests {
             required_controls: Vec::new(),
             policy_version: "0.2.5".into(),
             evaluator_hash: aegis_policy::EVALUATOR_HASH.into(),
+            plan_hash: "test-plan-hash".into(),
             evidence_fresh_until: None,
         };
         assert!(validate_policy_result_version(&policy).is_err());

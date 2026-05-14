@@ -1,14 +1,14 @@
 #![forbid(unsafe_code)]
 
 use aegis_core::{AuditEvent, AuditEventKind, PolicyDecision};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 pub fn data_dir() -> Result<PathBuf> {
@@ -70,9 +70,16 @@ pub fn check_writable(dir: PathBuf) -> Result<()> {
 }
 
 pub fn audit_log_dir() -> PathBuf {
+    if let Ok(path) = env::var("AEGIS_AUDIT_LOG_DIR") {
+        return PathBuf::from(path);
+    }
     data_dir()
         .map(|d| d.join("audit"))
         .unwrap_or_else(|_| PathBuf::from("/tmp/aegis/audit"))
+}
+
+pub fn audit_log_path() -> PathBuf {
+    audit_log_dir().join("audit.ndjson")
 }
 
 pub fn new_audit_event(
@@ -106,10 +113,15 @@ pub fn new_audit_event(
     }
 }
 
-pub fn append_audit_event(mut event: AuditEvent) -> Result<()> {
+pub fn append_audit_event(event: AuditEvent) -> Result<()> {
     let dir = audit_log_dir();
-    fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    append_audit_event_to_dir(&dir, event)
+}
+
+fn append_audit_event_to_dir(dir: &Path, mut event: AuditEvent) -> Result<()> {
+    fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     let log_path = dir.join("audit.ndjson");
+    let _lock = AuditLock::acquire(dir)?;
 
     // Read previous hash for hash chain
     let previous_hash = read_last_hash(&log_path);
@@ -136,6 +148,85 @@ pub fn append_audit_event(mut event: AuditEvent) -> Result<()> {
         .with_context(|| format!("opening {}", log_path.display()))?;
     writeln!(file, "{line}").with_context(|| format!("appending to {}", log_path.display()))?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct AuditVerification {
+    pub path: PathBuf,
+    pub events: u64,
+    pub last_hash: Option<String>,
+}
+
+pub fn verify_audit_log() -> Result<AuditVerification> {
+    verify_audit_log_path(audit_log_path())
+}
+
+pub fn verify_audit_log_path(path: impl AsRef<Path>) -> Result<AuditVerification> {
+    let path = path.as_ref();
+    let file = fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let reader = std::io::BufReader::new(file);
+    let mut previous_hash: Option<String> = None;
+    let mut sequence = 0_u64;
+    for (index, line) in reader.lines().enumerate() {
+        let line = line.with_context(|| format!("reading line {}", index + 1))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        sequence += 1;
+        let mut event: AuditEvent = serde_json::from_str(&line)
+            .with_context(|| format!("parsing audit event line {}", index + 1))?;
+        if event.sequence != sequence {
+            bail!(
+                "audit sequence mismatch at line {}: got {}, expected {}",
+                index + 1,
+                event.sequence,
+                sequence
+            );
+        }
+        if event.previous_hash != previous_hash {
+            bail!("audit previous_hash mismatch at line {}", index + 1);
+        }
+        let actual_hash = event.event_hash.clone();
+        event.event_hash = String::new();
+        let canonical = serde_json::to_string(&event).context("serializing audit event")?;
+        let hash_input = if let Some(ref prev) = previous_hash {
+            format!("{prev}:{canonical}")
+        } else {
+            canonical
+        };
+        let expected_hash = hex::encode(Sha256::digest(hash_input.as_bytes()));
+        if actual_hash != expected_hash {
+            bail!("audit event_hash mismatch at line {}", index + 1);
+        }
+        previous_hash = Some(actual_hash);
+    }
+    Ok(AuditVerification {
+        path: path.to_path_buf(),
+        events: sequence,
+        last_hash: previous_hash,
+    })
+}
+
+struct AuditLock {
+    path: PathBuf,
+}
+
+impl AuditLock {
+    fn acquire(dir: &Path) -> Result<Self> {
+        let path = dir.join(".audit.lock");
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .with_context(|| format!("acquiring audit lock {}", path.display()))?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for AuditLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 fn read_last_hash(path: &PathBuf) -> Option<String> {
@@ -173,4 +264,50 @@ fn hostname() -> String {
     fs::read_to_string("/etc/hostname")
         .map(|h| h.trim().to_string())
         .unwrap_or_else(|_| "unknown".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verifies_hash_chain_and_detects_tampering() {
+        let dir = std::env::temp_dir().join(format!("aegis-audit-test-{}", Uuid::new_v4()));
+        append_audit_event_to_dir(
+            &dir,
+            new_audit_event(
+                AuditEventKind::ExecutionStarted,
+                Some("tester".into()),
+                Some("plan".into()),
+                Some("exec".into()),
+                vec!["apt-get".into(), "update".into()],
+                Some(PolicyDecision::Allow),
+                serde_json::json!({"test": true}),
+            ),
+        )
+        .unwrap();
+        append_audit_event_to_dir(
+            &dir,
+            new_audit_event(
+                AuditEventKind::ExecutionCompleted,
+                Some("tester".into()),
+                Some("plan".into()),
+                Some("exec".into()),
+                vec!["apt-get".into(), "update".into()],
+                Some(PolicyDecision::Allow),
+                serde_json::json!({"test": true}),
+            ),
+        )
+        .unwrap();
+        let log = dir.join("audit.ndjson");
+        let verification = verify_audit_log_path(&log).unwrap();
+        assert_eq!(verification.events, 2);
+
+        let tampered = fs::read_to_string(&log)
+            .unwrap()
+            .replace("\"sequence\":2", "\"sequence\":22");
+        fs::write(&log, tampered).unwrap();
+        assert!(verify_audit_log_path(&log).is_err());
+        let _ = fs::remove_dir_all(dir);
+    }
 }

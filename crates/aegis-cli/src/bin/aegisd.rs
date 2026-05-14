@@ -22,6 +22,8 @@ struct Cli {
     socket: PathBuf,
     #[arg(long)]
     public_key_hex: Option<String>,
+    #[arg(long)]
+    approval_public_key_hex: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -30,6 +32,7 @@ fn main() -> Result<()> {
         .public_key_hex
         .or_else(|| std::env::var("AEGIS_SIGNING_PUBLIC_KEY_HEX").ok())
         .context("missing --public-key-hex or AEGIS_SIGNING_PUBLIC_KEY_HEX")?;
+    let approval_public_keys = approval_public_keys(&cli.approval_public_key_hex);
 
     if let Some(parent) = cli.socket.parent() {
         fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
@@ -47,8 +50,11 @@ fn main() -> Result<()> {
         match stream {
             Ok(stream) => {
                 let public_key_hex = public_key_hex.clone();
+                let approval_public_keys = approval_public_keys.clone();
                 thread::spawn(move || {
-                    if let Err(error) = handle_client(stream, &public_key_hex) {
+                    if let Err(error) =
+                        handle_client(stream, &public_key_hex, &approval_public_keys)
+                    {
                         eprintln!("request failed: {error:#}");
                     }
                 });
@@ -70,11 +76,15 @@ fn set_socket_permissions(_socket: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn handle_client(mut stream: UnixStream, public_key_hex: &str) -> Result<()> {
+fn handle_client(
+    mut stream: UnixStream,
+    public_key_hex: &str,
+    approval_public_keys: &[String],
+) -> Result<()> {
     let mut raw = String::new();
     stream.read_to_string(&mut raw).context("reading request")?;
     let plan: ExecutionPlan = serde_json::from_str(&raw).context("parsing execution plan")?;
-    let response = match apply_plan(&plan, public_key_hex) {
+    let response = match apply_plan(&plan, public_key_hex, approval_public_keys) {
         Ok(output) => serde_json::json!({ "ok": true, "output": output }),
         Err(error) => {
             let event = aegis_audit::new_audit_event(
@@ -97,9 +107,10 @@ fn handle_client(mut stream: UnixStream, public_key_hex: &str) -> Result<()> {
 fn apply_plan(
     plan: &ExecutionPlan,
     public_key_hex: &str,
+    approval_public_keys: &[String],
 ) -> Result<aegis_executor::ExecutionOutput> {
     aegis_signing::verify_execution_plan(plan, public_key_hex)?;
-    aegis_executor::preflight_execution_plan(plan)?;
+    aegis_executor::preflight_execution_plan_with_approval_keys(plan, approval_public_keys)?;
     aegis_audit::append_audit_event(aegis_audit::new_audit_event(
         AuditEventKind::ExecutionStarted,
         Some(plan.signer_identity.clone()),
@@ -124,4 +135,16 @@ fn apply_plan(
     completed.stderr_sha256 = Some(output.stderr_sha256.clone());
     aegis_audit::append_audit_event(completed)?;
     Ok(output)
+}
+
+fn approval_public_keys(cli_keys: &[String]) -> Vec<String> {
+    let mut keys = cli_keys.to_vec();
+    if let Ok(raw) = std::env::var("AEGIS_APPROVAL_PUBLIC_KEY_HEX") {
+        keys.extend(
+            raw.split(|c: char| c == ',' || c == ';' || c.is_whitespace())
+                .filter(|part| !part.trim().is_empty())
+                .map(|part| part.trim().to_string()),
+        );
+    }
+    keys
 }

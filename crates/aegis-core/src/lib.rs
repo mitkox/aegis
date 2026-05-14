@@ -3,6 +3,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -34,8 +35,37 @@ pub struct PolicyResult {
     pub required_controls: Vec<String>,
     pub policy_version: String,
     pub evaluator_hash: String,
+    #[serde(default)]
+    pub plan_hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence_fresh_until: Option<String>,
+}
+
+pub fn sha256_hex<T: Serialize>(value: &T) -> serde_json::Result<String> {
+    let bytes = canonical_json_bytes(value)?;
+    Ok(hex::encode(Sha256::digest(bytes)))
+}
+
+pub fn canonical_json_bytes<T: Serialize>(value: &T) -> serde_json::Result<Vec<u8>> {
+    let value = serde_json::to_value(value)?;
+    let sorted = sort_json(value);
+    serde_json::to_vec(&sorted)
+}
+
+fn sort_json(value: Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.into_iter().map(sort_json).collect()),
+        Value::Object(map) => {
+            let mut sorted = serde_json::Map::new();
+            let mut entries = map.into_iter().collect::<Vec<_>>();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            for (key, value) in entries {
+                sorted.insert(key, sort_json(value));
+            }
+            Value::Object(sorted)
+        }
+        scalar => scalar,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -226,11 +256,28 @@ pub struct SignatureEnvelope {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Approval {
     pub signer: String,
+    #[serde(default = "default_approval_role")]
+    pub role: String,
     pub reason: String,
     pub approved_at: String,
     pub expires_at: String,
     pub plan_hash: String,
-    pub signature: SignatureEnvelope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<SignatureEnvelope>,
+}
+
+fn default_approval_role() -> String {
+    "human-approver".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ControlProof {
+    pub control: String,
+    pub proof_type: String,
+    pub value: String,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -291,6 +338,12 @@ pub struct ExecutionPlan {
     pub approvals: Vec<Approval>,
     pub operation_plan_hash: String,
     pub policy_result_hash: String,
+    pub operation_plan: OperationPlan,
+    pub policy_result: PolicyResult,
+    #[serde(default)]
+    pub control_proofs: Vec<ControlProof>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ai_review_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<SignatureEnvelope>,
 }
@@ -306,6 +359,8 @@ impl ExecutionPlan {
         policy_result_hash: impl Into<String>,
     ) -> Self {
         let targets: Vec<String> = op.target.iter().cloned().collect();
+        let operation_plan_hash = operation_plan_hash.into();
+        let policy_result_hash = policy_result_hash.into();
         Self {
             schema_version: 1,
             execution_plan_id: Uuid::new_v4().to_string(),
@@ -326,8 +381,12 @@ impl ExecutionPlan {
             created_at: Utc::now().to_rfc3339(),
             expires_at: expires_at.into(),
             approvals: Vec::new(),
-            operation_plan_hash: operation_plan_hash.into(),
-            policy_result_hash: policy_result_hash.into(),
+            operation_plan_hash,
+            policy_result_hash,
+            operation_plan: op.clone(),
+            policy_result: policy.clone(),
+            control_proofs: Vec::new(),
+            ai_review_hash: None,
             signature: None,
         }
     }

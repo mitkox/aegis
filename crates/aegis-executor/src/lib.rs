@@ -5,7 +5,7 @@
 //! This crate owns deterministic preflight validation and argv allowlisting.
 //! It deliberately accepts only narrow package-manager argv patterns.
 
-use aegis_core::{ExecutionPlan, PolicyDecision};
+use aegis_core::{Approval, ControlProof, ExecutionPlan, PolicyDecision};
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -31,20 +31,34 @@ pub struct ExecutionOutput {
 }
 
 pub fn preflight_execution_plan(plan: &ExecutionPlan) -> Result<()> {
+    preflight_execution_plan_inner(plan, None)
+}
+
+pub fn preflight_execution_plan_with_approval_keys(
+    plan: &ExecutionPlan,
+    approval_public_keys: &[String],
+) -> Result<()> {
+    preflight_execution_plan_inner(plan, Some(approval_public_keys))
+}
+
+fn preflight_execution_plan_inner(
+    plan: &ExecutionPlan,
+    approval_public_keys: Option<&[String]>,
+) -> Result<()> {
     if plan.signature.is_none() {
         bail!("execution plan is unsigned");
     }
     if plan.policy_decision == PolicyDecision::Deny {
         bail!("policy decision denies execution");
     }
-    if plan.policy_decision == PolicyDecision::RequireHuman && plan.approvals.is_empty() {
-        bail!("human approval is required but no signed approval is attached");
-    }
     if is_expired(&plan.expires_at)? {
         bail!("execution plan has expired");
     }
+    validate_policy_freshness(plan)?;
+    validate_embedded_plan_policy_binding(plan)?;
     validate_argv_allowlist(&plan.argv)?;
     validate_exact_targets_match_argv(plan)?;
+    validate_required_controls(plan, approval_public_keys)?;
     Ok(())
 }
 
@@ -68,6 +82,186 @@ pub fn execute_plan(plan: &ExecutionPlan) -> Result<ExecutionOutput> {
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
     })
+}
+
+fn validate_policy_freshness(plan: &ExecutionPlan) -> Result<()> {
+    parse_timestamp(&plan.created_at, "execution plan created_at")?;
+    if let Some(fresh_until) = &plan.policy_result.evidence_fresh_until {
+        if is_expired(fresh_until)? {
+            bail!("policy evidence freshness window has expired");
+        }
+    }
+    Ok(())
+}
+
+fn validate_embedded_plan_policy_binding(plan: &ExecutionPlan) -> Result<()> {
+    if plan.operation_plan.plan_id != plan.operation_plan_id {
+        bail!("embedded operation plan id does not match execution plan operation_plan_id");
+    }
+    let operation_plan_hash =
+        aegis_core::sha256_hex(&plan.operation_plan).context("hashing embedded operation plan")?;
+    if operation_plan_hash != plan.operation_plan_hash {
+        bail!("embedded operation plan hash does not match execution plan hash");
+    }
+    if plan.policy_result.plan_hash != plan.operation_plan_hash {
+        bail!("policy result is not bound to the embedded operation plan hash");
+    }
+    let policy_result_hash =
+        aegis_core::sha256_hex(&plan.policy_result).context("hashing embedded policy result")?;
+    if policy_result_hash != plan.policy_result_hash {
+        bail!("embedded policy result hash does not match execution plan hash");
+    }
+    if plan.policy_decision != plan.policy_result.decision {
+        bail!("execution policy decision does not match embedded policy result");
+    }
+    if plan.policy_version != plan.policy_result.policy_version {
+        bail!("execution policy version does not match embedded policy result");
+    }
+    if plan.evaluator_hash != plan.policy_result.evaluator_hash {
+        bail!("execution evaluator hash does not match embedded policy result");
+    }
+    if plan.required_controls != plan.policy_result.required_controls {
+        bail!("execution required controls do not match embedded policy result");
+    }
+    let expected_targets: Vec<String> = plan.operation_plan.target.iter().cloned().collect();
+    if plan.exact_targets != expected_targets {
+        bail!("execution exact_targets do not match embedded operation plan target");
+    }
+    Ok(())
+}
+
+fn validate_required_controls(
+    plan: &ExecutionPlan,
+    approval_public_keys: Option<&[String]>,
+) -> Result<()> {
+    if plan.policy_decision == PolicyDecision::RequireHuman
+        && !plan
+            .required_controls
+            .iter()
+            .any(|control| control == "human approval")
+    {
+        bail!("require-human policy result must require human approval control");
+    }
+    if plan.policy_decision == PolicyDecision::AllowWithSnapshot
+        && !plan
+            .required_controls
+            .iter()
+            .any(|control| control == "system snapshot")
+    {
+        bail!("allow-with-snapshot policy result must require system snapshot control");
+    }
+    for control in &plan.required_controls {
+        match control.as_str() {
+            "human approval" => validate_human_approval(plan, approval_public_keys)?,
+            "system snapshot" => validate_system_snapshot(plan)?,
+            other => validate_generic_control_proof(plan, other)?,
+        }
+    }
+    Ok(())
+}
+
+fn validate_human_approval(
+    plan: &ExecutionPlan,
+    approval_public_keys: Option<&[String]>,
+) -> Result<()> {
+    if plan.approvals.is_empty() {
+        bail!("human approval is required but no signed approval is attached");
+    }
+    let mut trusted_signature_verified = false;
+    for approval in &plan.approvals {
+        validate_approval_structural(approval, &plan.operation_plan_hash)?;
+        if let Some(keys) = approval_public_keys {
+            for key in keys {
+                if aegis_signing::verify_approval(approval, key).is_ok() {
+                    trusted_signature_verified = true;
+                    break;
+                }
+            }
+        }
+    }
+    if let Some(keys) = approval_public_keys {
+        if keys.is_empty() {
+            bail!("trusted approval public key is required for human-approved execution");
+        }
+        if !trusted_signature_verified {
+            bail!("no approval signature verified with a trusted approval public key");
+        }
+    }
+    Ok(())
+}
+
+fn validate_approval_structural(approval: &Approval, operation_plan_hash: &str) -> Result<()> {
+    if approval.signer.trim().is_empty() {
+        bail!("approval signer is empty");
+    }
+    if approval.role.trim().is_empty() {
+        bail!("approval role is empty");
+    }
+    if approval.reason.trim().is_empty() {
+        bail!("approval reason is empty");
+    }
+    if approval.plan_hash != operation_plan_hash {
+        bail!("approval plan hash does not match execution plan operation hash");
+    }
+    parse_timestamp(&approval.approved_at, "approval approved_at")?;
+    if is_expired(&approval.expires_at)? {
+        bail!("approval has expired");
+    }
+    let signature = approval
+        .signature
+        .as_ref()
+        .ok_or_else(|| anyhow!("approval is unsigned"))?;
+    if signature.algorithm != aegis_signing::SIGNATURE_ALGORITHM {
+        bail!("approval signature algorithm is not ed25519");
+    }
+    if signature.key_id.trim().is_empty() || signature.signature.trim().is_empty() {
+        bail!("approval signature is incomplete");
+    }
+    if signature.signature == "covered-by-execution-plan-signature" {
+        bail!("placeholder approval signatures are not accepted");
+    }
+    Ok(())
+}
+
+fn validate_system_snapshot(plan: &ExecutionPlan) -> Result<()> {
+    let proof = plan
+        .control_proofs
+        .iter()
+        .find(|proof| proof.control == "system snapshot")
+        .ok_or_else(|| anyhow!("system snapshot control requires a snapshot proof"))?;
+    validate_control_proof_common(proof)?;
+    if !matches!(
+        proof.proof_type.as_str(),
+        "snapshot-id" | "btrfs-snapshot" | "zfs-snapshot" | "lvm-snapshot"
+    ) {
+        bail!("system snapshot proof type is not supported");
+    }
+    Ok(())
+}
+
+fn validate_generic_control_proof(plan: &ExecutionPlan, control: &str) -> Result<()> {
+    let proof = plan
+        .control_proofs
+        .iter()
+        .find(|proof| proof.control == control)
+        .ok_or_else(|| anyhow!("required control {control} has no proof"))?;
+    validate_control_proof_common(proof)
+}
+
+fn validate_control_proof_common(proof: &ControlProof) -> Result<()> {
+    if proof.control.trim().is_empty()
+        || proof.proof_type.trim().is_empty()
+        || proof.value.trim().is_empty()
+    {
+        bail!("control proof is incomplete");
+    }
+    parse_timestamp(&proof.created_at, "control proof created_at")?;
+    if let Some(expires_at) = &proof.expires_at {
+        if is_expired(expires_at)? {
+            bail!("control proof has expired");
+        }
+    }
+    Ok(())
 }
 
 pub fn validate_argv_allowlist(argv: &[String]) -> Result<()> {
@@ -465,10 +659,14 @@ fn ensure_managed_directories(program: &str) -> Result<()> {
 }
 
 fn is_expired(expires_at: &str) -> Result<bool> {
-    let expires = DateTime::parse_from_rfc3339(expires_at)
-        .context("parsing execution plan expires_at")?
-        .with_timezone(&Utc);
+    let expires = parse_timestamp(expires_at, "expires_at")?;
     Ok(Utc::now() > expires)
+}
+
+fn parse_timestamp(value: &str, label: &str) -> Result<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .with_context(|| format!("parsing {label}"))
+        .map(|timestamp| timestamp.with_timezone(&Utc))
 }
 
 fn contains_shell_metacharacter(value: &str) -> bool {
@@ -640,42 +838,169 @@ mod tests {
 
     #[test]
     fn preflight_denies_argv_target_drift() {
-        let mut plan = ExecutionPlan {
-            schema_version: 1,
-            execution_plan_id: "exec".into(),
-            operation_plan_id: "op".into(),
-            policy_decision: PolicyDecision::Allow,
-            policy_version: "test".into(),
-            evaluator_hash: "test".into(),
-            argv: vec![
-                "npm".into(),
-                "install".into(),
-                "--global".into(),
-                "--prefix".into(),
-                NPM_PREFIX.into(),
-                "--ignore-scripts".into(),
-                "--no-audit".into(),
-                "--no-fund".into(),
-                "left-pad".into(),
+        let drift = test_execution_plan(
+            aegis_core::Tool::Npm,
+            "install",
+            Some("lodash"),
+            npm_argv("left-pad"),
+            PolicyDecision::Allow,
+            Vec::new(),
+        );
+        assert!(preflight_execution_plan(&drift).is_err());
+
+        let valid = test_execution_plan(
+            aegis_core::Tool::Npm,
+            "install",
+            Some("left-pad"),
+            npm_argv("left-pad"),
+            PolicyDecision::Allow,
+            Vec::new(),
+        );
+        preflight_execution_plan(&valid).unwrap();
+    }
+
+    #[test]
+    fn preflight_denies_embedded_policy_plan_hash_drift() {
+        let mut plan = test_execution_plan(
+            aegis_core::Tool::Apt,
+            "update",
+            None,
+            vec!["apt-get".into(), "update".into()],
+            PolicyDecision::Allow,
+            Vec::new(),
+        );
+        plan.policy_result.plan_hash = "different".into();
+        assert!(preflight_execution_plan(&plan).is_err());
+    }
+
+    #[test]
+    fn preflight_requires_snapshot_proof() {
+        let mut plan = test_execution_plan(
+            aegis_core::Tool::Apt,
+            "upgrade",
+            None,
+            vec![
+                "apt-get".into(),
+                "upgrade".into(),
+                "-y".into(),
+                "-o".into(),
+                "Dpkg::Options::=--force-confold".into(),
             ],
-            exact_targets: vec!["lodash".into()],
-            required_preflight_checks: Vec::new(),
-            required_controls: Vec::new(),
-            rollback_plan: None,
-            signer_identity: "test".into(),
-            created_at: "2026-01-01T00:00:00Z".into(),
+            PolicyDecision::AllowWithSnapshot,
+            vec!["system snapshot".into()],
+        );
+        assert!(preflight_execution_plan(&plan).is_err());
+        plan.control_proofs.push(aegis_core::ControlProof {
+            control: "system snapshot".into(),
+            proof_type: "snapshot-id".into(),
+            value: "snap-123".into(),
+            created_at: "2026-05-14T00:00:00Z".into(),
+            expires_at: Some("2999-01-01T00:00:00Z".into()),
+        });
+        preflight_execution_plan(&plan).unwrap();
+    }
+
+    #[test]
+    fn preflight_rejects_placeholder_human_approval() {
+        let mut plan = test_execution_plan(
+            aegis_core::Tool::Npm,
+            "install",
+            Some("left-pad"),
+            npm_argv("left-pad"),
+            PolicyDecision::RequireHuman,
+            vec!["human approval".into()],
+        );
+        plan.approvals.push(aegis_core::Approval {
+            signer: "alice".into(),
+            role: "human-approver".into(),
+            reason: "reviewed".into(),
+            approved_at: "2026-05-14T00:00:00Z".into(),
             expires_at: "2999-01-01T00:00:00Z".into(),
-            approvals: Vec::new(),
-            operation_plan_hash: "op-hash".into(),
-            policy_result_hash: "policy-hash".into(),
+            plan_hash: plan.operation_plan_hash.clone(),
             signature: Some(aegis_core::SignatureEnvelope {
                 algorithm: "ed25519".into(),
-                key_id: "test".into(),
-                signature: "test".into(),
+                key_id: "approval".into(),
+                signature: "covered-by-execution-plan-signature".into(),
             }),
-        };
+        });
         assert!(preflight_execution_plan(&plan).is_err());
-        plan.exact_targets = vec!["left-pad".into()];
-        preflight_execution_plan(&plan).unwrap();
+    }
+
+    #[test]
+    fn preflight_verifies_trusted_approval_key() {
+        const SECRET: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        let mut plan = test_execution_plan(
+            aegis_core::Tool::Npm,
+            "install",
+            Some("left-pad"),
+            npm_argv("left-pad"),
+            PolicyDecision::RequireHuman,
+            vec!["human approval".into()],
+        );
+        let mut approval = aegis_core::Approval {
+            signer: "alice".into(),
+            role: "human-approver".into(),
+            reason: "reviewed".into(),
+            approved_at: "2026-05-14T00:00:00Z".into(),
+            expires_at: "2999-01-01T00:00:00Z".into(),
+            plan_hash: plan.operation_plan_hash.clone(),
+            signature: None,
+        };
+        aegis_signing::sign_approval(&mut approval, "approval", SECRET).unwrap();
+        plan.approvals.push(approval);
+        let public_key = aegis_signing::public_key_from_secret_hex(SECRET).unwrap();
+        preflight_execution_plan_with_approval_keys(&plan, &[public_key]).unwrap();
+        assert!(preflight_execution_plan_with_approval_keys(&plan, &[]).is_err());
+    }
+
+    fn test_execution_plan(
+        tool: aegis_core::Tool,
+        operation: &str,
+        target: Option<&str>,
+        argv: Vec<String>,
+        decision: PolicyDecision,
+        required_controls: Vec<String>,
+    ) -> ExecutionPlan {
+        let op = aegis_core::OperationPlan::new(tool, operation, target.map(str::to_string));
+        let op_hash = aegis_core::sha256_hex(&op).unwrap();
+        let policy = aegis_core::PolicyResult {
+            decision,
+            reasons: vec!["test".into()],
+            required_controls,
+            policy_version: "test".into(),
+            evaluator_hash: "test".into(),
+            plan_hash: op_hash.clone(),
+            evidence_fresh_until: None,
+        };
+        let policy_hash = aegis_core::sha256_hex(&policy).unwrap();
+        let mut plan = ExecutionPlan::new(
+            &op,
+            &policy,
+            argv,
+            "test",
+            "2999-01-01T00:00:00Z",
+            op_hash,
+            policy_hash,
+        );
+        plan.signature = Some(aegis_core::SignatureEnvelope {
+            algorithm: "ed25519".into(),
+            key_id: "test".into(),
+            signature: "test".into(),
+        });
+        plan
+    }
+
+    fn npm_argv(target: &str) -> Vec<String> {
+        vec![
+            "npm".into(),
+            "install".into(),
+            "--global".into(),
+            "--prefix".into(),
+            NPM_PREFIX.into(),
+            "--ignore-scripts".into(),
+            "--no-audit".into(),
+            "--no-fund".into(),
+            target.into(),
+        ]
     }
 }

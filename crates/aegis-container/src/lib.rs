@@ -169,17 +169,17 @@ mod tests {
     }
 
     #[test]
-    fn ubuntu_latest_requires_human() {
+    fn ubuntu_latest_is_denied_as_mutable() {
         let plan = test_plan("ubuntu:latest");
-        let result = evaluate(&plan, &PolicyConfig::default());
-        assert_eq!(result.decision, aegis_core::PolicyDecision::RequireHuman);
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
+        assert_eq!(result.decision, aegis_core::PolicyDecision::Deny);
     }
 
     #[test]
-    fn nginx_without_tag_requires_human() {
+    fn nginx_without_tag_is_denied_as_mutable() {
         let plan = test_plan("nginx");
-        let result = evaluate(&plan, &PolicyConfig::default());
-        assert_eq!(result.decision, aegis_core::PolicyDecision::RequireHuman);
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
+        assert_eq!(result.decision, aegis_core::PolicyDecision::Deny);
     }
 
     #[test]
@@ -187,7 +187,7 @@ mod tests {
         let digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         let mut plan = test_plan(&format!("ghcr.io/org/image@sha256:{digest}"));
         plan.metadata_available = true;
-        let result = evaluate(&plan, &PolicyConfig::default());
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
         assert!(matches!(
             result.decision,
             aegis_core::PolicyDecision::Allow | aegis_core::PolicyDecision::AllowWithSnapshot

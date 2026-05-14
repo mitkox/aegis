@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "aegis-ai"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "anyhow",
@@ -15,7 +15,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-apt"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "anyhow",
@@ -25,7 +25,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-audit"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "anyhow",
@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-cargo"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "aegis-policy",
@@ -50,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-cli"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-ai",
  "aegis-apt",
@@ -75,7 +75,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-container"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "aegis-policy",
@@ -86,19 +86,22 @@ dependencies = [
 
 [[package]]
 name = "aegis-core"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "chrono",
+ "hex",
  "serde",
  "serde_json",
+ "sha2",
  "uuid",
 ]
 
 [[package]]
 name = "aegis-executor"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
+ "aegis-signing",
  "anyhow",
  "chrono",
  "hex",
@@ -109,7 +112,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-go"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-audit",
  "aegis-core",
@@ -121,7 +124,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-npm"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "anyhow",
@@ -131,7 +134,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-nuget"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "aegis-policy",
@@ -142,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-pip"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "aegis-policy",
@@ -153,7 +156,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-policy"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "anyhow",
@@ -164,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-signing"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "anyhow",
@@ -178,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-vscode"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "aegis-core",
  "aegis-policy",

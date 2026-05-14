@@ -1,20 +1,24 @@
 #![forbid(unsafe_code)]
 
-use aegis_core::{has_shell_metacharacters, OperationPlan, PolicyDecision, PolicyResult, Tool};
+use aegis_core::{
+    has_shell_metacharacters, AiRecommendation, AiReview, OperationPlan, OverallRisk,
+    PolicyDecision, PolicyResult, RiskLevel, Tool,
+};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
-pub const POLICY_VERSION: &str = "0.2.6";
+pub const POLICY_VERSION: &str = "0.2.7";
 
 /// A deterministic identifier for this evaluator build.
 ///
 /// In production this should be the SHA-256 of the evaluator binary.
 /// During early releases this is a compile-time constant tied to the source version.
-pub const EVALUATOR_HASH: &str = "aegis-policy-0.2.6";
+pub const EVALUATOR_HASH: &str = "aegis-policy-0.2.7";
 
 fn result(
+    plan_hash: &str,
     decision: PolicyDecision,
     reasons: Vec<String>,
     required_controls: Vec<String>,
@@ -25,6 +29,7 @@ fn result(
         required_controls,
         policy_version: POLICY_VERSION.to_string(),
         evaluator_hash: EVALUATOR_HASH.to_string(),
+        plan_hash: plan_hash.to_string(),
         evidence_fresh_until: None,
     }
 }
@@ -50,7 +55,29 @@ pub fn load_policy_config(path: impl AsRef<Path>) -> Result<PolicyConfig> {
     toml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
 }
 
-pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
+pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> Result<PolicyResult> {
+    evaluate_with_review(plan, config, None)
+}
+
+pub fn evaluate_with_review(
+    plan: &OperationPlan,
+    config: &PolicyConfig,
+    review: Option<&AiReview>,
+) -> Result<PolicyResult> {
+    let plan_hash = aegis_core::sha256_hex(plan).context("hashing operation plan")?;
+    let deterministic = evaluate_deterministic(plan, config, &plan_hash);
+    Ok(apply_ai_review_restrictions(
+        &plan_hash,
+        deterministic,
+        review,
+    ))
+}
+
+fn evaluate_deterministic(
+    plan: &OperationPlan,
+    config: &PolicyConfig,
+    plan_hash: &str,
+) -> PolicyResult {
     let mut deny_reasons = Vec::new();
     let mut human_reasons = Vec::new();
     let mut controls = Vec::new();
@@ -118,9 +145,28 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
     if appears_obfuscated(&scripts) {
         deny_reasons.push("script appears obfuscated".to_string());
     }
+    if !matches!(plan.tool, Tool::Apt) {
+        if plan.mutable_reference {
+            deny_reasons.push(
+                "mutable non-APT package or artifact reference is denied by deterministic policy"
+                    .to_string(),
+            );
+        }
+        if !has_strong_non_apt_apply_evidence(plan) {
+            deny_reasons.push(format!(
+                "{} production apply requires pinned, verified artifact evidence before execution",
+                plan.ecosystem.as_deref().unwrap_or("non-APT")
+            ));
+        }
+    }
 
     if !deny_reasons.is_empty() {
-        return result(PolicyDecision::Deny, deny_reasons, controls);
+        return result(
+            plan_hash,
+            PolicyDecision::Deny,
+            dedup(deny_reasons),
+            controls,
+        );
     }
 
     for signal in &plan.risk_signals {
@@ -227,7 +273,12 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
 
     if !human_reasons.is_empty() {
         controls.push("human approval".to_string());
-        return result(PolicyDecision::RequireHuman, dedup(human_reasons), controls);
+        return result(
+            plan_hash,
+            PolicyDecision::RequireHuman,
+            dedup(human_reasons),
+            controls,
+        );
     }
 
     if plan
@@ -240,6 +291,7 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
             && !(matches!(plan.tool, Tool::Apt) && plan.operation == "update"))
     {
         return result(
+            plan_hash,
             PolicyDecision::RequireHuman,
             vec!["package or artifact metadata is unavailable".into()],
             vec!["human approval".into()],
@@ -251,6 +303,7 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
         && !plan.packages_removed.is_empty()
     {
         return result(
+            plan_hash,
             PolicyDecision::RequireHuman,
             vec!["apt upgrade includes removals".into()],
             vec!["human approval".into()],
@@ -264,28 +317,19 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
         && !plan.risk_signals.iter().any(|s| s == "security-sensitive")
     {
         return result(
+            plan_hash,
             PolicyDecision::AllowWithSnapshot,
             vec!["apt dry-run upgrade has no removals or sensitive package changes".into()],
             vec!["system snapshot".into()],
         );
     }
 
-    if matches!(plan.tool, Tool::Npm) {
+    if matches!(plan.tool, Tool::Container | Tool::Go) {
         return result(
-            PolicyDecision::Allow,
-            vec!["npm package has no policy-blocking risk signals".into()],
-            controls,
-        );
-    }
-
-    if matches!(
-        plan.tool,
-        Tool::Pip | Tool::Nuget | Tool::Vscode | Tool::Cargo | Tool::Container | Tool::Go
-    ) {
-        return result(
+            plan_hash,
             PolicyDecision::Allow,
             vec![format!(
-                "{} package or artifact has no policy-blocking risk signals",
+                "{} package or artifact has pinned, verified apply evidence and no policy-blocking risk signals",
                 plan.ecosystem.as_deref().unwrap_or("ecosystem")
             )],
             controls,
@@ -294,6 +338,7 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
 
     if matches!(plan.tool, Tool::Apt) && plan.operation == "update" {
         return result(
+            plan_hash,
             PolicyDecision::Allow,
             vec!["apt metadata refresh has no policy-blocking risk signals".into()],
             controls,
@@ -301,10 +346,92 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
     }
 
     result(
+        plan_hash,
         PolicyDecision::RequireHuman,
         vec!["operation is not covered by an allow rule".into()],
         vec!["human approval".into()],
     )
+}
+
+fn apply_ai_review_restrictions(
+    plan_hash: &str,
+    mut policy: PolicyResult,
+    review: Option<&AiReview>,
+) -> PolicyResult {
+    let Some(review) = review else {
+        return policy;
+    };
+    if policy.decision == PolicyDecision::Deny {
+        return policy;
+    }
+    if review.recommendation == AiRecommendation::Deny || review.risk == OverallRisk::Deny {
+        let mut reasons = vec!["AI review classified the operation as deny".to_string()];
+        reasons.extend(
+            review
+                .red_flags
+                .iter()
+                .map(|flag| format!("AI red flag: {flag}")),
+        );
+        return result(plan_hash, PolicyDecision::Deny, dedup(reasons), Vec::new());
+    }
+    if review_requires_human(review) {
+        policy.decision = PolicyDecision::RequireHuman;
+        policy
+            .reasons
+            .push("AI review escalated the operation to human approval".into());
+        policy.reasons.extend(
+            review
+                .red_flags
+                .iter()
+                .map(|flag| format!("AI red flag: {flag}")),
+        );
+        policy.reasons.extend(
+            review
+                .required_controls
+                .iter()
+                .map(|control| format!("AI requested control: {control}")),
+        );
+        if !policy
+            .required_controls
+            .iter()
+            .any(|control| control == "human approval")
+        {
+            policy.required_controls.push("human approval".into());
+        }
+        policy.reasons = dedup(policy.reasons);
+    }
+    policy
+}
+
+fn review_requires_human(review: &AiReview) -> bool {
+    review.recommendation == AiRecommendation::RequireHuman
+        || review.risk == OverallRisk::High
+        || matches!(review.supply_chain_risk, RiskLevel::High)
+        || matches!(review.privilege_risk, RiskLevel::High)
+        || matches!(review.persistence_risk, RiskLevel::High)
+        || matches!(review.availability_risk, RiskLevel::High)
+        || !review.red_flags.is_empty()
+}
+
+fn has_strong_non_apt_apply_evidence(plan: &OperationPlan) -> bool {
+    match plan.tool {
+        Tool::Container => {
+            plan.metadata_available
+                && !plan.mutable_reference
+                && plan.signature_or_checksum_status.as_deref() == Some("digest-pinned")
+        }
+        Tool::Go => {
+            plan.metadata_available
+                && !plan.mutable_reference
+                && plan
+                    .target_version
+                    .as_deref()
+                    .is_some_and(|version| !version.is_empty())
+                && plan.signature_or_checksum_status.as_deref() != Some("disabled")
+        }
+        Tool::Apt => true,
+        Tool::Npm | Tool::Pip | Tool::Nuget | Tool::Vscode | Tool::Cargo => false,
+    }
 }
 
 fn scripts_text(plan: &OperationPlan) -> String {
@@ -369,7 +496,7 @@ fn dedup(values: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aegis_core::{OperationPlan, Tool};
+    use aegis_core::{OperationPlan, RollbackDifficulty, Tool};
     use serde_json::json;
 
     #[test]
@@ -378,8 +505,9 @@ mod tests {
         plan.command_preview = vec!["apt-get".into(), "-s".into(), "upgrade".into()];
         plan.packages_removed = vec!["old-lib".into()];
         plan.risk_signals = vec!["package-removal".into()];
-        let result = evaluate(&plan, &PolicyConfig::default());
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
         assert_eq!(result.decision, PolicyDecision::Deny);
+        assert_eq!(result.plan_hash, aegis_core::sha256_hex(&plan).unwrap());
     }
 
     #[test]
@@ -388,25 +516,25 @@ mod tests {
         plan.command_preview = vec!["apt-get".into(), "-s".into(), "upgrade".into()];
         plan.packages_upgraded = vec!["linux-image-generic".into()];
         plan.risk_signals = vec!["kernel-change".into()];
-        let result = evaluate(&plan, &PolicyConfig::default());
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
         assert_eq!(result.decision, PolicyDecision::RequireHuman);
     }
 
     #[test]
-    fn requires_human_for_npm_postinstall_without_forbidden_downloader() {
+    fn denies_npm_postinstall_without_strong_apply_evidence() {
         let mut plan = OperationPlan::new(Tool::Npm, "install", Some("pkg".into()));
         plan.command_preview = vec!["npm".into(), "view".into(), "pkg".into(), "--json".into()];
         plan.risk_signals = vec!["npm-package".into(), "lifecycle-scripts".into()];
         plan.raw_evidence = json!({ "scripts": { "postinstall": "node setup.js" } });
-        let result = evaluate(&plan, &PolicyConfig::default());
-        assert_eq!(result.decision, PolicyDecision::RequireHuman);
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
+        assert_eq!(result.decision, PolicyDecision::Deny);
     }
 
     #[test]
     fn command_preview_rejects_shell_string() {
         let mut plan = OperationPlan::new(Tool::Apt, "install", Some("nginx".into()));
         plan.command_preview = vec!["apt-get -s install nginx; rm -rf /".into()];
-        let result = evaluate(&plan, &PolicyConfig::default());
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
         assert_eq!(result.decision, PolicyDecision::Deny);
     }
 
@@ -416,17 +544,69 @@ mod tests {
         plan.mutates_system = true;
         plan.network_access = true;
         plan.risk_signals = vec!["metadata-command-failed".into()];
-        let result = evaluate(&plan, &PolicyConfig::default());
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
         assert_eq!(result.decision, PolicyDecision::Deny);
     }
 
     #[test]
-    fn unavailable_metadata_requires_human() {
+    fn unavailable_non_apt_metadata_is_denied_by_default() {
         let mut plan = OperationPlan::new(Tool::Cargo, "install", Some("ripgrep".into()));
         plan.mutates_system = true;
         plan.network_access = true;
         plan.risk_signals = vec!["metadata-unavailable".into()];
-        let result = evaluate(&plan, &PolicyConfig::default());
+        let result = evaluate(&plan, &PolicyConfig::default()).unwrap();
+        assert_eq!(result.decision, PolicyDecision::Deny);
+    }
+
+    #[test]
+    fn ai_review_can_escalate_but_not_approve() {
+        let mut plan = OperationPlan::new(Tool::Apt, "update", None);
+        plan.command_preview = vec!["apt-get".into(), "update".into()];
+        let review = ai_review(AiRecommendation::RequireHuman, OverallRisk::High);
+        let result = evaluate_with_review(&plan, &PolicyConfig::default(), Some(&review)).unwrap();
         assert_eq!(result.decision, PolicyDecision::RequireHuman);
+        assert!(result.required_controls.contains(&"human approval".into()));
+
+        let denied = evaluate_with_review(
+            &denied_plan_for_review(),
+            &PolicyConfig::default(),
+            Some(&ai_review(AiRecommendation::AutoApprove, OverallRisk::Low)),
+        )
+        .unwrap();
+        assert_eq!(denied.decision, PolicyDecision::Deny);
+    }
+
+    #[test]
+    fn ai_review_can_deny() {
+        let mut plan = OperationPlan::new(Tool::Apt, "update", None);
+        plan.command_preview = vec!["apt-get".into(), "update".into()];
+        let result = evaluate_with_review(
+            &plan,
+            &PolicyConfig::default(),
+            Some(&ai_review(AiRecommendation::Deny, OverallRisk::Deny)),
+        )
+        .unwrap();
+        assert_eq!(result.decision, PolicyDecision::Deny);
+    }
+
+    fn ai_review(recommendation: AiRecommendation, risk: OverallRisk) -> AiReview {
+        AiReview {
+            risk,
+            summary: "review".into(),
+            supply_chain_risk: RiskLevel::Low,
+            privilege_risk: RiskLevel::Low,
+            persistence_risk: RiskLevel::Low,
+            availability_risk: RiskLevel::Low,
+            rollback_difficulty: RollbackDifficulty::Easy,
+            red_flags: Vec::new(),
+            required_controls: Vec::new(),
+            recommendation,
+        }
+    }
+
+    fn denied_plan_for_review() -> OperationPlan {
+        let mut plan = OperationPlan::new(Tool::Apt, "install", Some("nginx".into()));
+        plan.command_preview = vec!["apt-get -s install nginx; rm -rf /".into()];
+        plan
     }
 }

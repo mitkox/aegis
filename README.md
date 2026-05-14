@@ -2,7 +2,7 @@
 
 Aegis is a local zero-trust package operation broker. It replaces direct package changes such as `sudo apt upgrade` or `npm install lodash` with deterministic planning, local AI review, deterministic policy, and auditable signed execution plans.
 
-> Status: **0.2.6**. Planning, AI review, deterministic policy, Ed25519-signed execution plans, constrained executor (`aegisd`), production apply for the supported package and artifact managers, and tamper-evident audit logging are implemented.
+> Status: **0.2.7**. Planning, AI review, plan-bound deterministic policy, Ed25519-signed execution plans, constrained executor (`aegisd`), required-control preflight, and verifiable tamper-evident audit logging are implemented. Production apply is intentionally conservative: APT is the primary production path; non-APT apply requires pinned/verified evidence and is denied by default when artifacts are mutable or unverified.
 
 Command flow:
 
@@ -90,6 +90,7 @@ aegis cargo install ripgrep --plan
 ```bash
 aegis review ~/.local/share/aegis/plans/<plan-id>.json
 aegis policy ~/.local/share/aegis/plans/<plan-id>.json
+aegis policy ~/.local/share/aegis/plans/<plan-id>.json --review ~/.local/share/aegis/reviews/<plan-id>.review.json
 ```
 
 ### Signed Execution Plans
@@ -97,9 +98,13 @@ aegis policy ~/.local/share/aegis/plans/<plan-id>.json
 ```bash
 aegisctl keygen
 aegisctl sign --plan <plan.json> --policy <policy.json> --key-id <id> --signer <identity>
-aegisctl verify --execution-plan <exec-plan.json> --public-key-hex <hex>
-aegisctl apply --execution-plan <exec-plan.json> --public-key-hex <hex>
+aegisctl sign --plan <plan.json> --policy <policy.json> --review <review.json> --key-id <id> --signer <identity>
+aegisctl sign --plan <plan.json> --policy <policy.json> --key-id <id> --signer <identity> --snapshot-id <snapshot-id>
+aegisctl sign --plan <plan.json> --policy <policy.json> --key-id <id> --signer <identity> --approval-reason <reason> --approval-key-id <approval-key-id> --approval-secret-key-hex <hex>
+aegisctl verify --execution-plan <exec-plan.json> --public-key-hex <hex> --approval-public-key-hex <hex>
+aegisctl apply --execution-plan <exec-plan.json> --public-key-hex <hex> --approval-public-key-hex <hex>
 aegisctl audit-path
+aegisctl audit-verify
 ```
 
 ### Production Daemons
@@ -133,7 +138,7 @@ Aegis uses explicit argv with `std::process::Command`; it does not use a shell.
 
 ## Supported Ecosystems And Safety Model
 
-| Ecosystem | Planning behavior | Signed apply argv |
+| Ecosystem | Planning behavior | Signed apply argv when policy permits |
 | --- | --- |
 | apt | dry-run with `apt-get -s`; `apt update --plan` describes intended metadata refresh without mutating | `apt-get update`, `apt-get upgrade -y -o Dpkg::Options::=--force-confold`, `apt-get install -y <validated-package>` |
 | npm | metadata with `npm view <package> --json` | `npm install --global --prefix /var/lib/aegis/npm-global --ignore-scripts --no-audit --no-fund <validated-package>` |
@@ -143,6 +148,8 @@ Aegis uses explicit argv with `std::process::Command`; it does not use a shell.
 | VS Code | extension id validation and installed-extension list | `code --install-extension <validated-extension> --user-data-dir /var/lib/aegis/vscode/user-data --extensions-dir /var/lib/aegis/vscode/extensions` |
 | Go | module metadata in a temp cache directory | `go install <validated-module>@<version>` with managed `GOPATH`, `GOBIN`, and `GOCACHE` |
 | Cargo | search with `cargo search` | `cargo install --locked --root /var/lib/aegis/cargo <validated-crate>` |
+
+For 0.2.7, deterministic policy denies mutable or unverified non-APT artifacts by default. Container apply requires a digest-pinned image with metadata; Go apply requires an explicit version with checksum database protections. npm, pip, NuGet, VS Code extension, and Cargo production apply remain behind stronger future evidence requirements such as version/digest pins, provenance/signature checks, vulnerability checks, source/tarball inspection, or SBOMs.
 
 Allowed planning subprocesses:
 
@@ -183,14 +190,18 @@ Production apply is available only through signed execution plans:
 ```bash
 aegis <ecosystem> <operation> --plan
 aegis review <plan.json>
-aegis policy <plan.json>
-aegisctl sign --plan <plan.json> --policy <policy.json> --key-id <id> --signer <identity>
+aegis policy <plan.json> [--review <review.json>]
+aegisctl sign --plan <plan.json> --policy <policy.json> [--review <review.json>] --key-id <id> --signer <identity>
 aegisctl verify --execution-plan <exec-plan.json> --public-key-hex <hex>
 aegisctl apply --execution-plan <exec-plan.json> --public-key-hex <hex>
 ```
 
 `aegisctl sign` derives execution argv from the deterministic operation plan. The model never supplies argv, and `aegisd` validates the signed argv against the same production allowlist before execution.
-Signing refuses stale policy-result versions, failed metadata collection is denied by deterministic policy, and unavailable package or artifact metadata requires human approval. The executor also verifies that the signed argv target matches the execution plan's exact target list before running an allowlisted command.
+Policy results include the exact operation-plan hash. `aegisctl sign` re-runs deterministic policy for the supplied plan and optional AI review, rejects mismatches, and embeds the operation plan, policy result, and optional AI review hash in the signed execution plan. The executor verifies those embedded hashes, signed argv target drift, expiry/freshness, and required controls before running an allowlisted command.
+
+AI review is one-way restrictive: it can escalate deterministic policy to `RequireHuman` or `Deny`, but it cannot approve or downgrade a deterministic policy decision.
+
+`AllowWithSnapshot` requires a snapshot proof such as `--snapshot-id`. `RequireHuman` requires an independently signed approval (`--approval-secret-key-hex` / `AEGIS_APPROVAL_SECRET_KEY_HEX`) using a key distinct from the execution signing key; `aegisctl verify`, `aegisctl apply`, and `aegisd` verify approvals with `--approval-public-key-hex` or `AEGIS_APPROVAL_PUBLIC_KEY_HEX`.
 
 ## Audit Files
 
@@ -218,7 +229,12 @@ Tamper-evident audit events are appended to:
 ~/.local/share/aegis/audit/audit.ndjson
 ```
 
-Each audit event contains a SHA-256 hash chain linking it to the previous event.
+Set `AEGIS_AUDIT_LOG_DIR` to move the production audit log (for example to a root-owned `/var/log/aegis` directory). Each audit event contains a SHA-256 hash chain linking it to the previous event. Verify the chain with:
+
+```bash
+aegisctl audit-verify
+aegisctl audit-verify --path /var/log/aegis/audit.ndjson
+```
 
 ## Open Source
 

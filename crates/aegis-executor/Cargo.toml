@@ -6,6 +6,7 @@ version.workspace = true
 
 [dependencies]
 aegis-core = { path = "../aegis-core" }
+aegis-signing = { path = "../aegis-signing" }
 anyhow.workspace = true
 chrono.workspace = true
 serde.workspace = true
