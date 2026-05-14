@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-05-14
+
+### Added
+
+- Production signed apply argv generation and executor allowlists for npm, pip, Docker/Podman, NuGet, VS Code extensions, Go, and Cargo.
+- Managed non-APT apply roots under `/var/lib/aegis` for package-manager state, caches, and developer-tool installs where the ecosystem supports it.
+- Concurrent `aegisd` client handling.
+- Executor preflight target-drift checks that require signed argv targets to match execution-plan `exact_targets`.
+- Deny-path coverage for failed metadata commands, unavailable metadata, malformed container digests, stale policy results, malformed Go version pins, and signed argv target drift.
+
+### Changed
+
+- Documentation now describes the full signed apply boundary for all supported ecosystems.
+- Policy allow reasons now describe package and artifact risk outcomes directly.
+- `aegisctl sign` now refuses stale policy-result versions or evaluator hashes.
+- Failed metadata commands are deterministic denies, while unavailable metadata requires human approval.
+
+### Fixed
+
+- Container image digest pins must use full `sha256:<64-hex>` references.
+- Production Go execution requires a well-formed single explicit version pin.
+
 ## [0.2.5] - 2026-05-14
 
 ### Added
@@ -19,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ExecutionPlan`**, **`SignatureEnvelope`**, **`Approval`**, **`AuditEvent`**, **`AuditEventKind`** types in `aegis-core`.
 - **`policy_version`**, **`evaluator_hash`**, **`evidence_fresh_until`** fields on `PolicyResult`.
 - **Policy config resolution**: `AEGIS_POLICY_CONFIG` env → `$XDG_CONFIG_HOME/aegis/policy.toml` → `/etc/aegis/policy.toml` → fallback.
-- **`aegis-executor`** crate with deterministic argv allowlisting (APT-only in production).
+- **`aegis-executor`** crate with deterministic argv allowlisting.
 - **`aegis-signing`** crate with Ed25519 key generation, plan signing, and verification.
 - **systemd service units** for `aegisd`, `aegis-reviewd`, `aegis-monitor` with comprehensive hardening.
 - **Native install/verify scripts** (`packaging/install-native.sh`, `packaging/verify-native.sh`).
@@ -61,14 +83,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No `shell=True` or shell-mediated command execution anywhere.
 - All subprocess argv are validated against deterministic allowlists.
 - AI model is reviewer-only — never executes, approves, or generates commands.
-- Production apply is APT-only with exact argv matching.
+- Production apply uses exact argv matching.
 
-### Limitations (MVP)
-
-- `--apply` through CLI is stubbed; apply requires `aegisctl sign` + `aegisctl apply` through `aegisd`.
-- Ecosystem adapters collect metadata only — no direct package installation.
-- Single-threaded daemon handlers (adequate for local use).
-
-[Unreleased]: https://github.com/mitkox/aegis/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/mitkox/aegis/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/mitkox/aegis/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/mitkox/aegis/compare/v0.1.0...v0.2.5
 [0.1.0]: https://github.com/mitkox/aegis/releases/tag/v0.1.0

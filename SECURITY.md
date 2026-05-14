@@ -32,6 +32,6 @@ User intent
 -> audit log
 ```
 
-The current production boundary implements planning, review, deterministic policy, signed execution plans, a constrained `aegisd` executor, and tamper-evident audit logging. Production apply is currently APT-only and limited to policy-approved argv forms documented in `README.md`.
+The current production boundary implements planning, review, deterministic policy, signed execution plans, a constrained `aegisd` executor, and tamper-evident audit logging. Production apply is limited to the policy-approved argv forms documented in `README.md` for apt, npm, pip, Docker/Podman, NuGet, VS Code extensions, Go, and Cargo. Signing rejects stale policy versions, failed metadata commands are denied by policy, and the executor verifies signed argv targets against exact plan targets before running allowlisted commands.
 
 The model is a reviewer only. It must not execute commands, approve execution, or generate commands that Aegis runs.

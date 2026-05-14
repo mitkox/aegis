@@ -11,6 +11,13 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
+const NPM_PREFIX: &str = "/var/lib/aegis/npm-global";
+const PIP_TARGET: &str = "/var/lib/aegis/pip-packages";
+const NUGET_OUTPUT_DIR: &str = "/var/lib/aegis/nuget/packages";
+const VSCODE_USER_DATA_DIR: &str = "/var/lib/aegis/vscode/user-data";
+const VSCODE_EXTENSIONS_DIR: &str = "/var/lib/aegis/vscode/extensions";
+const CARGO_ROOT: &str = "/var/lib/aegis/cargo";
+
 #[derive(Debug, Parser)]
 #[command(name = "aegisctl", version, about = "Production control CLI for Aegis")]
 struct Cli {
@@ -113,6 +120,7 @@ fn main() -> Result<()> {
 fn sign(request: SignRequest) -> Result<()> {
     let plan: OperationPlan = read_json(&request.plan_path)?;
     let policy: PolicyResult = read_json(&request.policy_path)?;
+    validate_policy_result_version(&policy)?;
     if policy.decision == PolicyDecision::Deny {
         bail!(
             "refusing to sign denied policy result: {}",
@@ -228,11 +236,257 @@ fn execution_argv_from_plan(plan: &OperationPlan) -> Result<Vec<String>> {
                 .unwrap_or_else(|| target.clone());
             Ok(vec!["apt-get".into(), "install".into(), "-y".into(), exact])
         }
-        _ => bail!("production execution is currently enabled only for APT plans"),
+        (aegis_core::Tool::Npm, "install") => {
+            let target = required_target(plan, "npm install")?;
+            aegis_npm::validate_npm_package_name(target)?;
+            Ok(vec![
+                "npm".into(),
+                "install".into(),
+                "--global".into(),
+                "--prefix".into(),
+                NPM_PREFIX.into(),
+                "--ignore-scripts".into(),
+                "--no-audit".into(),
+                "--no-fund".into(),
+                target.into(),
+            ])
+        }
+        (aegis_core::Tool::Pip, "install") => {
+            let target = required_target(plan, "pip install")?;
+            aegis_pip::validate_pip_package_name(target)?;
+            Ok(vec![
+                "python3".into(),
+                "-m".into(),
+                "pip".into(),
+                "install".into(),
+                "--disable-pip-version-check".into(),
+                "--no-input".into(),
+                "--target".into(),
+                PIP_TARGET.into(),
+                target.into(),
+            ])
+        }
+        (aegis_core::Tool::Container, "pull") => {
+            let target = required_target(plan, "container pull")?;
+            aegis_container::validate_image_reference(target)?;
+            let runtime = plan
+                .command_preview
+                .first()
+                .map(String::as_str)
+                .unwrap_or("docker");
+            match runtime {
+                "docker" => Ok(vec!["docker".into(), "pull".into(), target.into()]),
+                "podman" => Ok(vec![
+                    "podman".into(),
+                    "--root".into(),
+                    "/var/lib/aegis/podman/storage".into(),
+                    "--runroot".into(),
+                    "/run/aegis/podman".into(),
+                    "pull".into(),
+                    target.into(),
+                ]),
+                other => bail!("unsupported container runtime in plan: {other}"),
+            }
+        }
+        (aegis_core::Tool::Nuget, "install") => {
+            let target = required_target(plan, "nuget install")?;
+            aegis_nuget::validate_nuget_package_id(target)?;
+            Ok(vec![
+                "nuget".into(),
+                "install".into(),
+                target.into(),
+                "-OutputDirectory".into(),
+                NUGET_OUTPUT_DIR.into(),
+                "-NonInteractive".into(),
+            ])
+        }
+        (aegis_core::Tool::Vscode, "install") => {
+            let target = required_target(plan, "VS Code extension install")?;
+            aegis_vscode::validate_extension_id(target)?;
+            Ok(vec![
+                "code".into(),
+                "--install-extension".into(),
+                target.into(),
+                "--user-data-dir".into(),
+                VSCODE_USER_DATA_DIR.into(),
+                "--extensions-dir".into(),
+                VSCODE_EXTENSIONS_DIR.into(),
+            ])
+        }
+        (aegis_core::Tool::Go, "get") => {
+            let target = required_target(plan, "go get")?;
+            aegis_go::validate_go_module(target)?;
+            if target
+                .rsplit_once('@')
+                .is_none_or(|(_, version)| version.is_empty())
+            {
+                bail!("production Go execution requires an explicit module version");
+            }
+            Ok(vec!["go".into(), "install".into(), target.into()])
+        }
+        (aegis_core::Tool::Cargo, "install") => {
+            let target = required_target(plan, "cargo install")?;
+            aegis_cargo::validate_crate_name(target)?;
+            Ok(vec![
+                "cargo".into(),
+                "install".into(),
+                "--locked".into(),
+                "--root".into(),
+                CARGO_ROOT.into(),
+                target.into(),
+            ])
+        }
+        _ => bail!("operation is not enabled for production execution"),
     }
+}
+
+fn required_target<'a>(plan: &'a OperationPlan, operation: &str) -> Result<&'a str> {
+    plan.target
+        .as_deref()
+        .with_context(|| format!("{operation} plan is missing target"))
+}
+
+fn validate_policy_result_version(policy: &PolicyResult) -> Result<()> {
+    if policy.policy_version != aegis_policy::POLICY_VERSION {
+        bail!(
+            "policy result version {} does not match evaluator {}",
+            policy.policy_version,
+            aegis_policy::POLICY_VERSION
+        );
+    }
+    if policy.evaluator_hash != aegis_policy::EVALUATOR_HASH {
+        bail!(
+            "policy result evaluator hash {} does not match {}",
+            policy.evaluator_hash,
+            aegis_policy::EVALUATOR_HASH
+        );
+    }
+    Ok(())
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     let raw = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aegis_core::{OperationPlan, Tool};
+
+    fn plan(tool: Tool, operation: &str, target: &str) -> OperationPlan {
+        OperationPlan::new(tool, operation, Some(target.to_string()))
+    }
+
+    #[test]
+    fn derives_npm_execution_argv_with_scripts_disabled() {
+        let argv = execution_argv_from_plan(&plan(Tool::Npm, "install", "lodash")).unwrap();
+        assert_eq!(
+            argv,
+            vec![
+                "npm",
+                "install",
+                "--global",
+                "--prefix",
+                NPM_PREFIX,
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+                "lodash"
+            ]
+        );
+    }
+
+    #[test]
+    fn derives_managed_execution_argv_for_all_non_apt_ecosystems() {
+        assert_eq!(
+            execution_argv_from_plan(&plan(Tool::Pip, "install", "requests")).unwrap(),
+            vec![
+                "python3",
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "--no-input",
+                "--target",
+                PIP_TARGET,
+                "requests"
+            ]
+        );
+        let mut container = plan(Tool::Container, "pull", "ubuntu:24.04");
+        container.command_preview = vec!["docker".into(), "manifest".into(), "inspect".into()];
+        assert_eq!(
+            execution_argv_from_plan(&container).unwrap(),
+            vec!["docker", "pull", "ubuntu:24.04"]
+        );
+        assert_eq!(
+            execution_argv_from_plan(&plan(Tool::Nuget, "install", "Newtonsoft.Json")).unwrap(),
+            vec![
+                "nuget",
+                "install",
+                "Newtonsoft.Json",
+                "-OutputDirectory",
+                NUGET_OUTPUT_DIR,
+                "-NonInteractive"
+            ]
+        );
+        assert_eq!(
+            execution_argv_from_plan(&plan(Tool::Vscode, "install", "ms-python.python")).unwrap(),
+            vec![
+                "code",
+                "--install-extension",
+                "ms-python.python",
+                "--user-data-dir",
+                VSCODE_USER_DATA_DIR,
+                "--extensions-dir",
+                VSCODE_EXTENSIONS_DIR
+            ]
+        );
+        assert_eq!(
+            execution_argv_from_plan(&plan(Tool::Cargo, "install", "ripgrep")).unwrap(),
+            vec!["cargo", "install", "--locked", "--root", CARGO_ROOT, "ripgrep"]
+        );
+    }
+
+    #[test]
+    fn derives_podman_execution_argv_with_managed_storage() {
+        let mut container = plan(Tool::Container, "pull", "registry.example.com/ns/image:1.0");
+        container.command_preview = vec!["podman".into(), "manifest".into(), "inspect".into()];
+        assert_eq!(
+            execution_argv_from_plan(&container).unwrap(),
+            vec![
+                "podman",
+                "--root",
+                "/var/lib/aegis/podman/storage",
+                "--runroot",
+                "/run/aegis/podman",
+                "pull",
+                "registry.example.com/ns/image:1.0"
+            ]
+        );
+    }
+
+    #[test]
+    fn requires_pinned_go_module_for_execution() {
+        assert!(execution_argv_from_plan(&plan(Tool::Go, "get", "github.com/acme/tool")).is_err());
+        assert!(execution_argv_from_plan(&plan(Tool::Go, "get", "github.com/acme/tool@")).is_err());
+        assert_eq!(
+            execution_argv_from_plan(&plan(Tool::Go, "get", "github.com/acme/tool@v1.0.0"))
+                .unwrap(),
+            vec!["go", "install", "github.com/acme/tool@v1.0.0"]
+        );
+    }
+
+    #[test]
+    fn rejects_stale_policy_result_version() {
+        let policy = PolicyResult {
+            decision: PolicyDecision::Allow,
+            reasons: vec!["ok".into()],
+            required_controls: Vec::new(),
+            policy_version: "0.2.5".into(),
+            evaluator_hash: aegis_policy::EVALUATOR_HASH.into(),
+            evidence_fresh_until: None,
+        };
+        assert!(validate_policy_result_version(&policy).is_err());
+    }
 }

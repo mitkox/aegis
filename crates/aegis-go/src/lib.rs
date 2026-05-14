@@ -29,6 +29,11 @@ pub fn validate_go_module(module: &str) -> Result<()> {
     }
     let valid = Regex::new(r"^[A-Za-z0-9./_~@+-]+$").expect("valid regex");
     if valid.is_match(module) {
+        if let Some((path, version)) = module.split_once('@') {
+            if path.is_empty() || version.is_empty() || version.contains('@') {
+                return Err(anyhow!("invalid Go module reference"));
+            }
+        }
         Ok(())
     } else {
         Err(anyhow!("invalid Go module reference"))
@@ -97,6 +102,7 @@ fn collect_go_env(plan: &mut OperationPlan) -> Result<GoEnv> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             plan.warnings
                 .push("go is unavailable; module metadata could not be collected".into());
+            push_unique(&mut plan.risk_signals, "metadata-unavailable");
             Ok(GoEnv::default())
         }
         Err(err) => Err(err.into()),
@@ -123,10 +129,14 @@ fn collect_go_list(module: &str, plan: &mut OperationPlan) -> Result<()> {
             if !output.status.success() {
                 plan.warnings
                     .push("go list returned a non-zero status".into());
+                push_unique(&mut plan.risk_signals, "metadata-command-failed");
             }
             Ok(())
         }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            push_unique(&mut plan.risk_signals, "metadata-unavailable");
+            Ok(())
+        }
         Err(err) => Err(err.into()),
     }
 }
@@ -201,6 +211,7 @@ mod tests {
     #[test]
     fn module_with_version_allowed() {
         let mut plan = base_plan("github.com/gin-gonic/gin@v1.10.0");
+        plan.metadata_available = true;
         apply_go_env_risks(
             &mut plan,
             &GoEnv {
@@ -237,5 +248,12 @@ mod tests {
     #[test]
     fn semicolon_rejected() {
         assert!(validate_go_module("github.com/a/b;id").is_err());
+    }
+
+    #[test]
+    fn malformed_version_pin_rejected() {
+        assert!(validate_go_module("github.com/a/b@").is_err());
+        assert!(validate_go_module("@v1.0.0").is_err());
+        assert!(validate_go_module("github.com/a/b@v1.0.0@evil").is_err());
     }
 }

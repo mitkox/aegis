@@ -372,13 +372,13 @@ fn ensure_plan_or_apply(args: &PlanApplyArgs) -> Result<()> {
         return Ok(());
     }
     if !args.plan {
-        bail!("MVP supports planning only; pass --plan");
+        bail!("direct package-manager commands require --plan; use aegisctl for signed apply");
     }
     Ok(())
 }
 
 fn print_apply_unimplemented() {
-    println!("apply is not implemented in MVP; only signed plan generation is supported");
+    println!("direct --apply is disabled; use aegisctl sign and aegisctl apply");
 }
 
 fn save_plan(plan: OperationPlan) -> Result<()> {
@@ -493,6 +493,11 @@ fn doctor() -> Result<()> {
             "dotnet",
             "optional for NuGet metadata",
             command_available("dotnet"),
+        ),
+        (
+            "nuget",
+            "optional for NuGet signed apply",
+            command_available("nuget"),
         ),
         (
             "code",

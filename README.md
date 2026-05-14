@@ -2,7 +2,7 @@
 
 Aegis is a local zero-trust package operation broker. It replaces direct package changes such as `sudo apt upgrade` or `npm install lodash` with deterministic planning, local AI review, deterministic policy, and auditable signed execution plans.
 
-> Status: **0.2.5**. Planning, AI review, deterministic policy, Ed25519-signed execution plans, constrained root executor (`aegisd`), and tamper-evident audit logging are implemented. Production apply is currently APT-only.
+> Status: **0.2.6**. Planning, AI review, deterministic policy, Ed25519-signed execution plans, constrained executor (`aegisd`), production apply for the supported package and artifact managers, and tamper-evident audit logging are implemented.
 
 Command flow:
 
@@ -131,20 +131,20 @@ cargo build --release
 
 Aegis uses explicit argv with `std::process::Command`; it does not use a shell.
 
-## Supported Ecosystems And MVP Safety Model
+## Supported Ecosystems And Safety Model
 
-| Ecosystem | MVP planning behavior |
+| Ecosystem | Planning behavior | Signed apply argv |
 | --- | --- |
-| apt | dry-run with `apt-get -s`; `apt update --plan` describes intended metadata refresh without mutating |
-| npm | metadata only with `npm view <package> --json`; no install |
-| pip | metadata/environment only with `python3 -m pip index versions`; no install |
-| Docker/Podman | manifest inspect only; no pull |
-| NuGet | metadata/search only with `dotnet nuget search`; no install |
-| VS Code | extension id validation and installed-extension list only; no install |
-| Go | module metadata in a temp cache directory; no project mutation |
-| Cargo | search only with `cargo search`; no install |
+| apt | dry-run with `apt-get -s`; `apt update --plan` describes intended metadata refresh without mutating | `apt-get update`, `apt-get upgrade -y -o Dpkg::Options::=--force-confold`, `apt-get install -y <validated-package>` |
+| npm | metadata with `npm view <package> --json` | `npm install --global --prefix /var/lib/aegis/npm-global --ignore-scripts --no-audit --no-fund <validated-package>` |
+| pip | metadata/environment with `python3 -m pip index versions` | `python3 -m pip install --disable-pip-version-check --no-input --target /var/lib/aegis/pip-packages <validated-package>` |
+| Docker/Podman | manifest inspect | `docker pull <validated-image>` or `podman --root /var/lib/aegis/podman/storage --runroot /run/aegis/podman pull <validated-image>` |
+| NuGet | metadata/search with `dotnet nuget search` | `nuget install <validated-package> -OutputDirectory /var/lib/aegis/nuget/packages -NonInteractive` |
+| VS Code | extension id validation and installed-extension list | `code --install-extension <validated-extension> --user-data-dir /var/lib/aegis/vscode/user-data --extensions-dir /var/lib/aegis/vscode/extensions` |
+| Go | module metadata in a temp cache directory | `go install <validated-module>@<version>` with managed `GOPATH`, `GOBIN`, and `GOCACHE` |
+| Cargo | search with `cargo search` | `cargo install --locked --root /var/lib/aegis/cargo <validated-crate>` |
 
-Allowed MVP subprocesses:
+Allowed planning subprocesses:
 
 - `apt-get -s upgrade`
 - `apt-get -s install <validated-package>`
@@ -160,7 +160,7 @@ Allowed MVP subprocesses:
 - `cargo search <validated-crate> --limit 5`
 - read-only availability checks for `doctor`
 
-Forbidden in MVP:
+Forbidden during planning:
 
 - `sudo`
 - `apt-get upgrade` without `-s`
@@ -177,6 +177,20 @@ Forbidden in MVP:
 - npm lifecycle scripts
 - `curl | bash`
 - model-generated commands
+
+Production apply is available only through signed execution plans:
+
+```bash
+aegis <ecosystem> <operation> --plan
+aegis review <plan.json>
+aegis policy <plan.json>
+aegisctl sign --plan <plan.json> --policy <policy.json> --key-id <id> --signer <identity>
+aegisctl verify --execution-plan <exec-plan.json> --public-key-hex <hex>
+aegisctl apply --execution-plan <exec-plan.json> --public-key-hex <hex>
+```
+
+`aegisctl sign` derives execution argv from the deterministic operation plan. The model never supplies argv, and `aegisd` validates the signed argv against the same production allowlist before execution.
+Signing refuses stale policy-result versions, failed metadata collection is denied by deterministic policy, and unavailable package or artifact metadata requires human approval. The executor also verifies that the signed argv target matches the execution plan's exact target list before running an allowlisted command.
 
 ## Audit Files
 
@@ -206,14 +220,6 @@ Tamper-evident audit events are appended to:
 
 Each audit event contains a SHA-256 hash chain linking it to the previous event.
 
-## Current Limitations
-
-- Production apply is APT-only (`apt-get update`, `apt-get upgrade`, `apt-get install`).
-- Ecosystem adapters (npm, pip, container, NuGet, VS Code, Go, Cargo) are plan-only — they collect metadata but do not install.
-- Single-threaded daemon handlers (adequate for local use).
-- APT dry-run parsing is best-effort over `apt-get -s` output.
-- AI review requires a reachable local OpenAI-compatible endpoint.
-
 ## Open Source
 
 Aegis is licensed under the MIT License. See [LICENSE](LICENSE).
@@ -222,7 +228,6 @@ Security reports should follow [SECURITY.md](SECURITY.md). Contributions should 
 
 ## Next Steps
 
-- Extend production executor to npm, pip, and other ecosystems.
 - Add richer package and artifact metadata parsers.
 - Add repository trust and snapshot integration.
 - Add rollback plan execution.

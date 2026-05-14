@@ -6,13 +6,13 @@ use serde::Deserialize;
 use std::fs;
 use std::path::Path;
 
-pub const POLICY_VERSION: &str = "0.2.5";
+pub const POLICY_VERSION: &str = "0.2.6";
 
 /// A deterministic identifier for this evaluator build.
 ///
 /// In production this should be the SHA-256 of the evaluator binary.
-/// For MVP we use a compile-time constant tied to the source version.
-pub const EVALUATOR_HASH: &str = "aegis-policy-0.2.5";
+/// During early releases this is a compile-time constant tied to the source version.
+pub const EVALUATOR_HASH: &str = "aegis-policy-0.2.6";
 
 fn result(
     decision: PolicyDecision,
@@ -88,7 +88,14 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
                 | "embedded-command-flag-denied"
         )
     }) {
-        deny_reasons.push("target source is denied in MVP".to_string());
+        deny_reasons.push("target source is denied by deterministic policy".to_string());
+    }
+    if plan
+        .risk_signals
+        .iter()
+        .any(|signal| signal == "metadata-command-failed")
+    {
+        deny_reasons.push("metadata command failed during planning".to_string());
     }
     if matches!(plan.tool, Tool::Npm) {
         let scripts = scripts_text(plan);
@@ -223,6 +230,22 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
         return result(PolicyDecision::RequireHuman, dedup(human_reasons), controls);
     }
 
+    if plan
+        .risk_signals
+        .iter()
+        .any(|signal| signal == "metadata-unavailable")
+        || (plan.mutates_system
+            && plan.network_access
+            && !plan.metadata_available
+            && !(matches!(plan.tool, Tool::Apt) && plan.operation == "update"))
+    {
+        return result(
+            PolicyDecision::RequireHuman,
+            vec!["package or artifact metadata is unavailable".into()],
+            vec!["human approval".into()],
+        );
+    }
+
     if matches!(plan.tool, Tool::Apt)
         && plan.operation == "upgrade"
         && !plan.packages_removed.is_empty()
@@ -250,7 +273,7 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
     if matches!(plan.tool, Tool::Npm) {
         return result(
             PolicyDecision::Allow,
-            vec!["npm metadata inspection only; MVP does not install packages".into()],
+            vec!["npm package has no policy-blocking risk signals".into()],
             controls,
         );
     }
@@ -262,7 +285,7 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
         return result(
             PolicyDecision::Allow,
             vec![format!(
-                "{} metadata-only plan has no policy-blocking risk signals",
+                "{} package or artifact has no policy-blocking risk signals",
                 plan.ecosystem.as_deref().unwrap_or("ecosystem")
             )],
             controls,
@@ -272,7 +295,7 @@ pub fn evaluate(plan: &OperationPlan, config: &PolicyConfig) -> PolicyResult {
     if matches!(plan.tool, Tool::Apt) && plan.operation == "update" {
         return result(
             PolicyDecision::Allow,
-            vec!["apt update is plan-only in MVP".into()],
+            vec!["apt metadata refresh has no policy-blocking risk signals".into()],
             controls,
         );
     }
@@ -385,5 +408,25 @@ mod tests {
         plan.command_preview = vec!["apt-get -s install nginx; rm -rf /".into()];
         let result = evaluate(&plan, &PolicyConfig::default());
         assert_eq!(result.decision, PolicyDecision::Deny);
+    }
+
+    #[test]
+    fn metadata_command_failure_is_denied() {
+        let mut plan = OperationPlan::new(Tool::Npm, "install", Some("missing".into()));
+        plan.mutates_system = true;
+        plan.network_access = true;
+        plan.risk_signals = vec!["metadata-command-failed".into()];
+        let result = evaluate(&plan, &PolicyConfig::default());
+        assert_eq!(result.decision, PolicyDecision::Deny);
+    }
+
+    #[test]
+    fn unavailable_metadata_requires_human() {
+        let mut plan = OperationPlan::new(Tool::Cargo, "install", Some("ripgrep".into()));
+        plan.mutates_system = true;
+        plan.network_access = true;
+        plan.risk_signals = vec!["metadata-unavailable".into()];
+        let result = evaluate(&plan, &PolicyConfig::default());
+        assert_eq!(result.decision, PolicyDecision::RequireHuman);
     }
 }

@@ -11,8 +11,8 @@ use std::env;
 use std::process::Command;
 
 pub fn validate_pip_package_name(name: &str) -> Result<()> {
-    if name.is_empty() {
-        return Err(anyhow!("package name must not be empty"));
+    if name.is_empty() || name.starts_with('-') {
+        return Err(anyhow!("invalid pip package name"));
     }
     let valid = Regex::new(r"^[A-Za-z0-9._-]+$").expect("valid regex");
     if valid.is_match(name) {
@@ -27,21 +27,21 @@ pub fn plan_install(package: &str) -> Result<OperationPlan> {
         return Ok(denied(
             "direct-url-denied",
             package,
-            "direct URLs are denied in MVP",
+            "direct URLs are denied by deterministic policy",
         ));
     }
     if package == "-r" || package.ends_with("requirements.txt") {
         return Ok(denied(
             "requirements-file-denied",
             package,
-            "requirements files are denied in MVP",
+            "requirements files are denied by deterministic policy",
         ));
     }
     if looks_like_local_path(package) {
         return Ok(denied(
             "local-path-denied",
             package,
-            "local paths are denied in MVP",
+            "local paths are denied by deterministic policy",
         ));
     }
     if has_shell_metacharacters(package) || package.contains(char::is_whitespace) {
@@ -69,6 +69,7 @@ pub fn plan_install(package: &str) -> Result<OperationPlan> {
             if !output.status.success() {
                 plan.warnings
                     .push("pip metadata command returned a non-zero status".into());
+                push_unique(&mut plan.risk_signals, "metadata-command-failed");
             }
             plan.raw_evidence = json!({
                 "metadata_command": plan.command_preview,
@@ -80,6 +81,7 @@ pub fn plan_install(package: &str) -> Result<OperationPlan> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             plan.warnings
                 .push("python3 or pip is unavailable; metadata could not be collected".into());
+            push_unique(&mut plan.risk_signals, "metadata-unavailable");
             plan.raw_evidence = json!({ "metadata_available": false });
         }
         Err(err) => return Err(err.into()),
@@ -171,6 +173,7 @@ mod tests {
     #[test]
     fn clean_package_name() {
         assert!(validate_pip_package_name("requests_toolbelt-1.0").is_ok());
+        assert!(validate_pip_package_name("--user").is_err());
     }
 
     #[test]

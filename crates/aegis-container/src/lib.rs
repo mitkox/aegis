@@ -34,10 +34,22 @@ pub fn validate_image_reference(image: &str) -> Result<()> {
     }
     let valid = Regex::new(r"^[A-Za-z0-9._:/@+-]+$").expect("valid regex");
     if valid.is_match(image) {
-        Ok(())
+        validate_digest_pin(image)
     } else {
         Err(anyhow!("invalid container image reference"))
     }
+}
+
+fn validate_digest_pin(image: &str) -> Result<()> {
+    if let Some((_, digest)) = image.split_once('@') {
+        let Some(hex_digest) = digest.strip_prefix("sha256:") else {
+            return Err(anyhow!("only sha256 image digest pins are supported"));
+        };
+        if hex_digest.len() != 64 || !hex_digest.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(anyhow!("invalid sha256 image digest"));
+        }
+    }
+    Ok(())
 }
 
 pub fn plan_pull(image: &str, runtime: ContainerRuntime) -> Result<OperationPlan> {
@@ -61,6 +73,7 @@ pub fn plan_pull(image: &str, runtime: ContainerRuntime) -> Result<OperationPlan
                 plan.warnings.push(format!(
                     "{runtime_name} manifest inspect returned a non-zero status"
                 ));
+                push_unique(&mut plan.risk_signals, "metadata-command-failed");
                 plan.raw_evidence = json!({ "raw_manifest_output": raw });
             }
         }
@@ -68,6 +81,7 @@ pub fn plan_pull(image: &str, runtime: ContainerRuntime) -> Result<OperationPlan
             plan.warnings.push(format!(
                 "{runtime_name} is unavailable; manifest metadata could not be collected"
             ));
+            push_unique(&mut plan.risk_signals, "metadata-unavailable");
             plan.raw_evidence = json!({ "metadata_available": false });
         }
         Err(err) => return Err(err.into()),
@@ -171,7 +185,8 @@ mod tests {
     #[test]
     fn digest_reference_allowed() {
         let digest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let plan = test_plan(&format!("ghcr.io/org/image@sha256:{digest}"));
+        let mut plan = test_plan(&format!("ghcr.io/org/image@sha256:{digest}"));
+        plan.metadata_available = true;
         let result = evaluate(&plan, &PolicyConfig::default());
         assert!(matches!(
             result.decision,
@@ -187,5 +202,11 @@ mod tests {
     #[test]
     fn embedded_flag_rejected() {
         assert!(validate_image_reference("--privileged").is_err());
+    }
+
+    #[test]
+    fn malformed_digest_rejected() {
+        assert!(validate_image_reference("ghcr.io/org/image@sha256:abc123").is_err());
+        assert!(validate_image_reference("ghcr.io/org/image@sha512:abc123").is_err());
     }
 }

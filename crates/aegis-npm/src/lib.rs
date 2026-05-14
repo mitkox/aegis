@@ -7,8 +7,8 @@ use serde_json::{json, Value};
 use std::process::Command;
 
 pub fn validate_npm_package_name(name: &str) -> Result<()> {
-    if name.is_empty() {
-        return Err(anyhow!("package name must not be empty"));
+    if name.is_empty() || name.starts_with('-') {
+        return Err(anyhow!("invalid npm package name"));
     }
     if name.len() > 214 {
         return Err(anyhow!("npm package name is too long"));
@@ -47,16 +47,27 @@ pub fn plan_install(package: &str) -> Result<OperationPlan> {
     {
         Ok(output) => {
             let raw = command_output_to_string(&output);
+            plan.metadata_available = output.status.success();
+            if !output.status.success() {
+                plan.warnings
+                    .push("npm view returned a non-zero status".into());
+                push_unique(&mut plan.risk_signals, "metadata-command-failed");
+            }
             let metadata: Value = serde_json::from_str(&raw).unwrap_or_else(|_| {
                 plan.warnings
                     .push("npm returned metadata that was not valid JSON".into());
                 json!({ "raw": raw })
             });
-            enrich_plan_from_metadata(&mut plan, metadata);
+            if output.status.success() {
+                enrich_plan_from_metadata(&mut plan, metadata);
+            } else {
+                plan.raw_evidence = json!({ "raw_npm_output": raw });
+            }
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             plan.warnings
                 .push("npm is unavailable; metadata inspection could not be performed".into());
+            push_unique(&mut plan.risk_signals, "metadata-unavailable");
             plan.raw_evidence = json!({ "npm_available": false });
         }
         Err(err) => return Err(err).context("running npm view"),
@@ -73,6 +84,7 @@ fn command_output_to_string(output: &std::process::Output) -> String {
 }
 
 pub fn enrich_plan_from_metadata(plan: &mut OperationPlan, metadata: Value) {
+    plan.metadata_available = true;
     let latest_version = metadata
         .get("version")
         .and_then(Value::as_str)
@@ -152,6 +164,7 @@ mod tests {
         assert!(validate_npm_package_name("lodash").is_ok());
         assert!(validate_npm_package_name("@scope/pkg.name").is_ok());
         assert!(validate_npm_package_name("").is_err());
+        assert!(validate_npm_package_name("--ignore-scripts").is_err());
         assert!(validate_npm_package_name("left pad").is_err());
         assert!(validate_npm_package_name("pkg;curl").is_err());
     }

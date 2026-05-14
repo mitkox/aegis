@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
+use std::thread;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -45,9 +46,12 @@ fn main() -> Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                if let Err(error) = handle_client(stream, &public_key_hex) {
-                    eprintln!("request failed: {error:#}");
-                }
+                let public_key_hex = public_key_hex.clone();
+                thread::spawn(move || {
+                    if let Err(error) = handle_client(stream, &public_key_hex) {
+                        eprintln!("request failed: {error:#}");
+                    }
+                });
             }
             Err(error) => eprintln!("accept failed: {error:#}"),
         }

@@ -8,6 +8,7 @@ use std::process::Command;
 
 pub fn validate_nuget_package_id(package: &str) -> Result<()> {
     if package.is_empty()
+        || package.starts_with('-')
         || package.contains(char::is_whitespace)
         || has_shell_metacharacters(package)
     {
@@ -34,12 +35,14 @@ pub fn plan_install(package: &str) -> Result<OperationPlan> {
             if !output.status.success() {
                 plan.warnings
                     .push("dotnet nuget search returned a non-zero status".into());
+                push_unique(&mut plan.risk_signals, "metadata-command-failed");
             }
             plan.raw_evidence = json!({ "raw_dotnet_nuget_search_output": raw });
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             plan.warnings
                 .push("dotnet is unavailable; NuGet metadata could not be collected".into());
+            push_unique(&mut plan.risk_signals, "metadata-unavailable");
             plan.raw_evidence = json!({ "metadata_available": false });
         }
         Err(err) => return Err(err.into()),
@@ -125,6 +128,7 @@ mod tests {
     #[test]
     fn clean_nuget_package() {
         assert!(validate_nuget_package_id("Newtonsoft.Json").is_ok());
+        assert!(validate_nuget_package_id("-ConfigFile").is_err());
     }
 
     #[test]

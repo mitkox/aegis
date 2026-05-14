@@ -10,7 +10,11 @@ use serde_json::{json, Value};
 use std::process::Command;
 
 pub fn validate_crate_name(name: &str) -> Result<()> {
-    if name.is_empty() || name.contains(char::is_whitespace) || has_shell_metacharacters(name) {
+    if name.is_empty()
+        || name.starts_with('-')
+        || name.contains(char::is_whitespace)
+        || has_shell_metacharacters(name)
+    {
         return Err(anyhow!("invalid crate name"));
     }
     let valid = Regex::new(r"^[A-Za-z0-9_-]+$").expect("valid regex");
@@ -26,14 +30,14 @@ pub fn plan_install(name: &str) -> Result<OperationPlan> {
         return Ok(denied(
             "git-source-denied",
             name,
-            "git sources are denied in MVP",
+            "git sources are denied by deterministic policy",
         ));
     }
     if looks_like_local_path(name) {
         return Ok(denied(
             "local-path-denied",
             name,
-            "local paths are denied in MVP",
+            "local paths are denied by deterministic policy",
         ));
     }
     validate_crate_name(name)?;
@@ -48,12 +52,14 @@ pub fn plan_install(name: &str) -> Result<OperationPlan> {
             if !output.status.success() {
                 plan.warnings
                     .push("cargo search returned a non-zero status".into());
+                push_unique(&mut plan.risk_signals, "metadata-command-failed");
             }
             plan.raw_evidence = json!({ "raw_cargo_search_output": raw });
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             plan.warnings
                 .push("cargo is unavailable; crate metadata could not be collected".into());
+            push_unique(&mut plan.risk_signals, "metadata-unavailable");
             plan.raw_evidence = json!({ "metadata_available": false });
         }
         Err(err) => return Err(err.into()),
@@ -137,6 +143,7 @@ mod tests {
     #[test]
     fn clean_crate_name() {
         assert!(validate_crate_name("ripgrep").is_ok());
+        assert!(validate_crate_name("--git").is_err());
     }
 
     #[test]

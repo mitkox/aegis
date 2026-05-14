@@ -15,8 +15,8 @@ pub struct AptDryRunSummary {
 }
 
 pub fn validate_apt_package_name(name: &str) -> Result<()> {
-    if name.is_empty() {
-        return Err(anyhow!("package name must not be empty"));
+    if name.is_empty() || name.starts_with('-') {
+        return Err(anyhow!("invalid apt package name"));
     }
     let valid = Regex::new(r"^[A-Za-z0-9.+_-]+$").expect("valid regex");
     if !valid.is_match(name) {
@@ -35,7 +35,7 @@ pub fn plan_update() -> OperationPlan {
     plan.network_access = true;
     plan.risk_signals = vec!["requires-root".into(), "network-operation".into()];
     plan.warnings = vec![
-        "MVP does not run apt-get update; this plan describes the intended metadata refresh".into(),
+        "plan describes the intended apt metadata refresh".into(),
         "repository trust verification is required before applying package metadata changes".into(),
     ];
     plan.raw_evidence = json!({
@@ -60,6 +60,12 @@ pub fn plan_upgrade() -> Result<OperationPlan> {
         parsed,
         raw,
     );
+    plan.metadata_available = output.status.success();
+    if !output.status.success() {
+        plan.warnings
+            .push("apt-get dry-run returned a non-zero status".into());
+        push_unique(&mut plan.risk_signals, "metadata-command-failed");
+    }
     plan.network_access = false;
     Ok(plan)
 }
@@ -81,6 +87,12 @@ pub fn plan_install(package: &str) -> Result<OperationPlan> {
         parsed,
         raw,
     );
+    plan.metadata_available = output.status.success();
+    if !output.status.success() {
+        plan.warnings
+            .push("apt-get dry-run returned a non-zero status".into());
+        push_unique(&mut plan.risk_signals, "metadata-command-failed");
+    }
     plan.network_access = true;
     push_unique(&mut plan.risk_signals, "network-operation");
     Ok(plan)
@@ -102,6 +114,7 @@ fn plan_from_summary(
 ) -> OperationPlan {
     let mut plan = OperationPlan::new(Tool::Apt, operation, target);
     plan.command_preview = command_preview.into_iter().map(String::from).collect();
+    plan.metadata_available = true;
     plan.mutates_system = true;
     plan.requires_root = true;
     plan.packages_installed = summary.packages_installed;
@@ -286,6 +299,7 @@ mod tests {
         assert!(validate_apt_package_name("libssl3").is_ok());
         assert!(validate_apt_package_name("foo.bar+baz_1-2").is_ok());
         assert!(validate_apt_package_name("").is_err());
+        assert!(validate_apt_package_name("-o").is_err());
         assert!(validate_apt_package_name("nginx;rm").is_err());
         assert!(validate_apt_package_name("two words").is_err());
     }

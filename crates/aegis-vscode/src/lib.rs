@@ -14,6 +14,7 @@ pub fn validate_extension_id(extension: &str) -> Result<()> {
         || extension.contains(char::is_whitespace)
         || has_shell_metacharacters(extension)
         || !extension.contains('.')
+        || extension.starts_with('-')
     {
         return Err(anyhow!("invalid VS Code extension id"));
     }
@@ -30,14 +31,14 @@ pub fn plan_install(extension: &str) -> Result<OperationPlan> {
         return Ok(denied(
             "url-denied",
             extension,
-            "URL extension installs are denied in MVP",
+            "URL extension installs are denied by deterministic policy",
         ));
     }
     if extension.ends_with(".vsix") || looks_like_local_path(extension) {
         return Ok(denied(
             "vsix-denied",
             extension,
-            "local VSIX installs are denied in MVP",
+            "local VSIX installs are denied by deterministic policy",
         ));
     }
     validate_extension_id(extension)?;
@@ -53,6 +54,7 @@ pub fn plan_install(extension: &str) -> Result<OperationPlan> {
             if !output.status.success() {
                 plan.warnings
                     .push("code --list-extensions returned a non-zero status".into());
+                push_unique(&mut plan.risk_signals, "metadata-command-failed");
             }
             plan.raw_evidence = json!({ "raw_installed_extensions": raw });
         }
@@ -60,6 +62,7 @@ pub fn plan_install(extension: &str) -> Result<OperationPlan> {
             plan.warnings.push(
                 "code is unavailable; installed extension metadata could not be collected".into(),
             );
+            push_unique(&mut plan.risk_signals, "metadata-unavailable");
             plan.raw_evidence = json!({ "metadata_available": false });
         }
         Err(err) => return Err(err.into()),
@@ -139,6 +142,7 @@ mod tests {
     #[test]
     fn clean_extension_id() {
         assert!(validate_extension_id("ms-python.python").is_ok());
+        assert!(validate_extension_id("-install.extension").is_err());
     }
 
     #[test]
