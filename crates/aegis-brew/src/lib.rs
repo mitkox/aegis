@@ -380,19 +380,13 @@ mod tests {
     #[test]
     fn rejects_url_input() {
         let plan = plan_install("https://example.com/evil.rb").unwrap();
-        assert!(plan
-            .risk_signals
-            .iter()
-            .any(|s| s == "url-source-denied"));
+        assert!(plan.risk_signals.iter().any(|s| s == "url-source-denied"));
     }
 
     #[test]
     fn rejects_local_path_input() {
         let plan = plan_install("./local/formula.rb").unwrap();
-        assert!(plan
-            .risk_signals
-            .iter()
-            .any(|s| s == "local-path-denied"));
+        assert!(plan.risk_signals.iter().any(|s| s == "local-path-denied"));
     }
 
     #[test]
@@ -475,7 +469,10 @@ mod tests {
         let v = load_fixture("poppler");
         let mut plan = base_plan("poppler");
         enrich_plan_from_info(&mut plan, &v);
-        assert!(plan.risk_signals.iter().any(|s| s == "linkage-binary-artifact"));
+        assert!(plan
+            .risk_signals
+            .iter()
+            .any(|s| s == "linkage-binary-artifact"));
         assert_eq!(
             plan.signature_or_checksum_status.as_deref(),
             Some("sha256-bottle")

@@ -38,6 +38,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aegis-brew"
+version = "0.2.7"
+dependencies = [
+ "aegis-core",
+ "anyhow",
+ "regex",
+ "serde_json",
+]
+
+[[package]]
 name = "aegis-cargo"
 version = "0.2.7"
 dependencies = [
@@ -55,6 +65,7 @@ dependencies = [
  "aegis-ai",
  "aegis-apt",
  "aegis-audit",
+ "aegis-brew",
  "aegis-cargo",
  "aegis-container",
  "aegis-core",
