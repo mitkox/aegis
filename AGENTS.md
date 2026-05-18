@@ -31,6 +31,9 @@ User intent -> deterministic analyzer -> local model review -> deterministic pol
 - `go env GOSUMDB GOPROXY GOPRIVATE GONOSUMDB`
 - `go list -m -json <validated-module>` only from a temp directory under `~/.cache/aegis/tmp`
 - `cargo search <validated-crate> --limit 5`
+- `brew info --json=v2 <validated-formula>`
+- `brew deps --include-build --json=v1 <validated-formula>`
+- `brew install --dry-run <validated-formula>`
 - read-only availability checks such as `--version`
 
 ## Adding Ecosystem Support

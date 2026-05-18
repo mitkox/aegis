@@ -1,0 +1,551 @@
+{
+  "formulae": [
+    {
+      "name": "poppler",
+      "full_name": "poppler",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [],
+      "versioned_formulae": [],
+      "desc": "PDF rendering library (based on the xpdf-3.0 code base)",
+      "license": "GPL-2.0-only OR GPL-3.0-only",
+      "homepage": "https://poppler.freedesktop.org/",
+      "versions": {
+        "stable": "26.04.0",
+        "head": "HEAD",
+        "bottle": true
+      },
+      "urls": {
+        "stable": {
+          "url": "https://poppler.freedesktop.org/poppler-26.04.0.tar.xz",
+          "tag": null,
+          "revision": null,
+          "using": null,
+          "checksum": "b0955163114af96bc0106f68cb24daf973a629462453d8b82775f81b0d4e0693"
+        },
+        "head": {
+          "url": "https://gitlab.freedesktop.org/poppler/poppler.git",
+          "branch": "master",
+          "using": null
+        }
+      },
+      "revision": 0,
+      "version_scheme": 0,
+      "compatibility_version": null,
+      "autobump": true,
+      "no_autobump_message": null,
+      "skip_livecheck": false,
+      "bottle": {
+        "stable": {
+          "rebuild": 1,
+          "root_url": "https://ghcr.io/v2/homebrew/core",
+          "files": {
+            "arm64_tahoe": {
+              "cellar": "/opt/homebrew/Cellar",
+              "url": "https://ghcr.io/v2/homebrew/core/poppler/blobs/sha256:dc47afa401538297b7afd6914363501443d832031434a2f0d3fde4aa3d75810e",
+              "sha256": "dc47afa401538297b7afd6914363501443d832031434a2f0d3fde4aa3d75810e"
+            },
+            "arm64_sequoia": {
+              "cellar": "/opt/homebrew/Cellar",
+              "url": "https://ghcr.io/v2/homebrew/core/poppler/blobs/sha256:17eab9fcc315f760a5092f6856d2385e10cba3787a8d61e36979d2a1c9fcc18b",
+              "sha256": "17eab9fcc315f760a5092f6856d2385e10cba3787a8d61e36979d2a1c9fcc18b"
+            },
+            "arm64_sonoma": {
+              "cellar": "/opt/homebrew/Cellar",
+              "url": "https://ghcr.io/v2/homebrew/core/poppler/blobs/sha256:c0828630e30e1216f7fb59adea4cefdc329ed8692e8aaeb059115cc54ac18f96",
+              "sha256": "c0828630e30e1216f7fb59adea4cefdc329ed8692e8aaeb059115cc54ac18f96"
+            },
+            "sonoma": {
+              "cellar": "/usr/local/Cellar",
+              "url": "https://ghcr.io/v2/homebrew/core/poppler/blobs/sha256:bbe9dff4184b7d629fdff43b540d8dfc53db559036f988daf752f02bf0714bd7",
+              "sha256": "bbe9dff4184b7d629fdff43b540d8dfc53db559036f988daf752f02bf0714bd7"
+            },
+            "arm64_linux": {
+              "cellar": "/home/linuxbrew/.linuxbrew/Cellar",
+              "url": "https://ghcr.io/v2/homebrew/core/poppler/blobs/sha256:3bd08cb0df5ccee7aeed0a7529867c063beaa0fec303c79fd7dd84c1d66971e6",
+              "sha256": "3bd08cb0df5ccee7aeed0a7529867c063beaa0fec303c79fd7dd84c1d66971e6"
+            },
+            "x86_64_linux": {
+              "cellar": "/home/linuxbrew/.linuxbrew/Cellar",
+              "url": "https://ghcr.io/v2/homebrew/core/poppler/blobs/sha256:e43a4677edf16c8af9f6e2b8fba9fec37ab610339a6d5a76eccac687b288d7b7",
+              "sha256": "e43a4677edf16c8af9f6e2b8fba9fec37ab610339a6d5a76eccac687b288d7b7"
+            }
+          }
+        }
+      },
+      "pour_bottle_only_if": null,
+      "keg_only": false,
+      "keg_only_reason": null,
+      "options": [],
+      "build_dependencies": [
+        "cmake",
+        "gettext",
+        "gobject-introspection",
+        "pkgconf"
+      ],
+      "dependencies": [
+        "cairo",
+        "fontconfig",
+        "freetype",
+        "glib",
+        "gpgmepp",
+        "jpeg-turbo",
+        "libpng",
+        "libtiff",
+        "little-cms2",
+        "nspr",
+        "nss",
+        "openjpeg",
+        "gettext",
+        "gpgme"
+      ],
+      "test_dependencies": [],
+      "recommended_dependencies": [],
+      "optional_dependencies": [],
+      "uses_from_macos": [
+        {
+          "gperf": "build"
+        },
+        "curl"
+      ],
+      "uses_from_macos_bounds": [
+        {},
+        {
+          "since": "monterey"
+        }
+      ],
+      "requirements": [],
+      "conflicts_with": [
+        "pdftohtml",
+        "pdf2image",
+        "xpdf"
+      ],
+      "conflicts_with_reasons": [
+        "poppler, pdftohtml, pdf2image, and xpdf install conflicting executables",
+        "poppler, pdftohtml, pdf2image, and xpdf install conflicting executables",
+        "poppler, pdftohtml, pdf2image, and xpdf install conflicting executables"
+      ],
+      "link_overwrite": [],
+      "caveats": null,
+      "installed": [
+        {
+          "version": "26.04.0",
+          "used_options": [],
+          "built_as_bottle": true,
+          "poured_from_bottle": true,
+          "time": 1779100900,
+          "runtime_dependencies": [
+            {
+              "full_name": "libpng",
+              "version": "1.6.58",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.6.58",
+              "declared_directly": true
+            },
+            {
+              "full_name": "freetype",
+              "version": "2.14.3",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2.14.3",
+              "declared_directly": true
+            },
+            {
+              "full_name": "libunistring",
+              "version": "1.4.2",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.4.2",
+              "declared_directly": false
+            },
+            {
+              "full_name": "gettext",
+              "version": "1.0",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.0",
+              "declared_directly": true
+            },
+            {
+              "full_name": "fontconfig",
+              "version": "2.17.1",
+              "revision": 0,
+              "bottle_rebuild": 1,
+              "pkg_version": "2.17.1",
+              "declared_directly": true
+            },
+            {
+              "full_name": "pcre2",
+              "version": "10.47",
+              "revision": 1,
+              "bottle_rebuild": 0,
+              "pkg_version": "10.47_1",
+              "declared_directly": false
+            },
+            {
+              "full_name": "glib",
+              "version": "2.88.1",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2.88.1",
+              "declared_directly": true
+            },
+            {
+              "full_name": "xorgproto",
+              "version": "2025.1",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2025.1",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libxau",
+              "version": "1.0.12",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.0.12",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libxdmcp",
+              "version": "1.1.5",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.1.5",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libxcb",
+              "version": "1.17.0",
+              "revision": 0,
+              "bottle_rebuild": 1,
+              "pkg_version": "1.17.0",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libx11",
+              "version": "1.8.13",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.8.13",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libxext",
+              "version": "1.3.7",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.3.7",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libxrender",
+              "version": "0.9.12",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "0.9.12",
+              "declared_directly": false
+            },
+            {
+              "full_name": "lzo",
+              "version": "2.10",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2.10",
+              "declared_directly": false
+            },
+            {
+              "full_name": "pixman",
+              "version": "0.46.4",
+              "revision": 0,
+              "bottle_rebuild": 1,
+              "pkg_version": "0.46.4",
+              "declared_directly": false
+            },
+            {
+              "full_name": "cairo",
+              "version": "1.18.4",
+              "revision": 0,
+              "bottle_rebuild": 2,
+              "pkg_version": "1.18.4",
+              "declared_directly": true
+            },
+            {
+              "full_name": "ca-certificates",
+              "version": "2026-05-14",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2026-05-14",
+              "declared_directly": false
+            },
+            {
+              "full_name": "gmp",
+              "version": "6.3.0",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "6.3.0",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libidn2",
+              "version": "2.3.8",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2.3.8",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libtasn1",
+              "version": "4.21.0",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "4.21.0",
+              "declared_directly": false
+            },
+            {
+              "full_name": "nettle",
+              "version": "4.0",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "4.0",
+              "declared_directly": false
+            },
+            {
+              "full_name": "p11-kit",
+              "version": "0.26.2",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "0.26.2",
+              "declared_directly": false
+            },
+            {
+              "full_name": "openssl@3",
+              "version": "3.6.2",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "3.6.2",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libevent",
+              "version": "2.1.12",
+              "revision": 1,
+              "bottle_rebuild": 0,
+              "pkg_version": "2.1.12_1",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libnghttp2",
+              "version": "1.69.0",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.69.0",
+              "declared_directly": false
+            },
+            {
+              "full_name": "unbound",
+              "version": "1.25.0",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.25.0",
+              "declared_directly": false
+            },
+            {
+              "full_name": "gnutls",
+              "version": "3.8.13",
+              "revision": 1,
+              "bottle_rebuild": 0,
+              "pkg_version": "3.8.13_1",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libgpg-error",
+              "version": "1.61",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.61",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libassuan",
+              "version": "3.0.2",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "3.0.2",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libgcrypt",
+              "version": "1.12.2",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.12.2",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libksba",
+              "version": "1.8.0",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.8.0",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libusb",
+              "version": "1.0.30",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.0.30",
+              "declared_directly": false
+            },
+            {
+              "full_name": "npth",
+              "version": "1.8",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.8",
+              "declared_directly": false
+            },
+            {
+              "full_name": "pinentry",
+              "version": "1.3.2",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.3.2",
+              "declared_directly": false
+            },
+            {
+              "full_name": "readline",
+              "version": "8.3.3",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "8.3.3",
+              "declared_directly": false
+            },
+            {
+              "full_name": "gnupg",
+              "version": "2.5.20",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2.5.20",
+              "declared_directly": false
+            },
+            {
+              "full_name": "gpgme",
+              "version": "2.0.1",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2.0.1",
+              "declared_directly": true
+            },
+            {
+              "full_name": "gpgmepp",
+              "version": "2.0.0",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2.0.0",
+              "declared_directly": true
+            },
+            {
+              "full_name": "jpeg-turbo",
+              "version": "3.1.4.1",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "3.1.4.1",
+              "declared_directly": true
+            },
+            {
+              "full_name": "xz",
+              "version": "5.8.3",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "5.8.3",
+              "declared_directly": false
+            },
+            {
+              "full_name": "lz4",
+              "version": "1.10.0",
+              "revision": 0,
+              "bottle_rebuild": 1,
+              "pkg_version": "1.10.0",
+              "declared_directly": false
+            },
+            {
+              "full_name": "zstd",
+              "version": "1.5.7",
+              "revision": 1,
+              "bottle_rebuild": 0,
+              "pkg_version": "1.5.7_1",
+              "declared_directly": false
+            },
+            {
+              "full_name": "libtiff",
+              "version": "4.7.1",
+              "revision": 1,
+              "bottle_rebuild": 0,
+              "pkg_version": "4.7.1_1",
+              "declared_directly": true
+            },
+            {
+              "full_name": "little-cms2",
+              "version": "2.19",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2.19",
+              "declared_directly": true
+            },
+            {
+              "full_name": "nspr",
+              "version": "4.39",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "4.39",
+              "declared_directly": true
+            },
+            {
+              "full_name": "nss",
+              "version": "3.124",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "3.124",
+              "declared_directly": true
+            },
+            {
+              "full_name": "openjpeg",
+              "version": "2.5.4",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "2.5.4",
+              "declared_directly": true
+            }
+          ],
+          "installed_on_request": true
+        }
+      ],
+      "linked_keg": "26.04.0",
+      "pinned": false,
+      "outdated": false,
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "deprecate_args": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "disable_args": null,
+      "post_install_defined": true,
+      "service": null,
+      "tap_git_head": "1cf579ed539be7645a1945950847abea670046e9",
+      "ruby_source_path": "Formula/p/poppler.rb",
+      "ruby_source_checksum": {
+        "sha256": "b8879f4efced57a0b2e6db3ca61ac026da8751fa4fa3a7acfba357d4d7b0f722"
+      }
+    }
+  ],
+  "casks": []
+}

@@ -1,0 +1,135 @@
+{
+  "formulae": [
+    {
+      "name": "yq",
+      "full_name": "yq",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [],
+      "versioned_formulae": [],
+      "desc": "Process YAML, JSON, XML, CSV and properties documents from the CLI",
+      "license": "MIT",
+      "homepage": "https://github.com/mikefarah/yq",
+      "versions": {
+        "stable": "4.53.2",
+        "head": "HEAD",
+        "bottle": true
+      },
+      "urls": {
+        "stable": {
+          "url": "https://github.com/mikefarah/yq/archive/refs/tags/v4.53.2.tar.gz",
+          "tag": null,
+          "revision": null,
+          "using": null,
+          "checksum": "1bc19bb8b1029148afa3465a9383f6dcccb1ecce28a0af1d81f07c93396ce37d"
+        },
+        "head": {
+          "url": "https://github.com/mikefarah/yq.git",
+          "branch": "master",
+          "using": null
+        }
+      },
+      "revision": 0,
+      "version_scheme": 0,
+      "compatibility_version": null,
+      "autobump": true,
+      "no_autobump_message": null,
+      "skip_livecheck": false,
+      "bottle": {
+        "stable": {
+          "rebuild": 0,
+          "root_url": "https://ghcr.io/v2/homebrew/core",
+          "files": {
+            "arm64_tahoe": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/yq/blobs/sha256:d17c2839ee1777042fee74ea12ae4b208ad185b7568736848056fca2c280ae10",
+              "sha256": "d17c2839ee1777042fee74ea12ae4b208ad185b7568736848056fca2c280ae10"
+            },
+            "arm64_sequoia": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/yq/blobs/sha256:d17c2839ee1777042fee74ea12ae4b208ad185b7568736848056fca2c280ae10",
+              "sha256": "d17c2839ee1777042fee74ea12ae4b208ad185b7568736848056fca2c280ae10"
+            },
+            "arm64_sonoma": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/yq/blobs/sha256:d17c2839ee1777042fee74ea12ae4b208ad185b7568736848056fca2c280ae10",
+              "sha256": "d17c2839ee1777042fee74ea12ae4b208ad185b7568736848056fca2c280ae10"
+            },
+            "sonoma": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/yq/blobs/sha256:f286c6fe05ab3414f9698d81d59d36209980c63b3937e2e4e9437981e1fec8f7",
+              "sha256": "f286c6fe05ab3414f9698d81d59d36209980c63b3937e2e4e9437981e1fec8f7"
+            },
+            "arm64_linux": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/yq/blobs/sha256:2fb220286c54f661e9779d91eff29f46055ff544995b8beffacd7e6486df5fb7",
+              "sha256": "2fb220286c54f661e9779d91eff29f46055ff544995b8beffacd7e6486df5fb7"
+            },
+            "x86_64_linux": {
+              "cellar": ":any_skip_relocation",
+              "url": "https://ghcr.io/v2/homebrew/core/yq/blobs/sha256:8c30770b766c4be4264aaab9e3d901451cb8465d6e34cd42480b3088446ea1dd",
+              "sha256": "8c30770b766c4be4264aaab9e3d901451cb8465d6e34cd42480b3088446ea1dd"
+            }
+          }
+        }
+      },
+      "pour_bottle_only_if": null,
+      "keg_only": false,
+      "keg_only_reason": null,
+      "options": [],
+      "build_dependencies": [
+        "go",
+        "pandoc"
+      ],
+      "dependencies": [],
+      "test_dependencies": [],
+      "recommended_dependencies": [],
+      "optional_dependencies": [],
+      "uses_from_macos": [],
+      "uses_from_macos_bounds": [],
+      "requirements": [],
+      "conflicts_with": [
+        "python-yq"
+      ],
+      "conflicts_with_reasons": [
+        "both install `yq` executables"
+      ],
+      "link_overwrite": [],
+      "caveats": null,
+      "installed": [
+        {
+          "version": "4.53.2",
+          "used_options": [],
+          "built_as_bottle": true,
+          "poured_from_bottle": true,
+          "time": 1778721509,
+          "runtime_dependencies": [],
+          "installed_on_request": true
+        }
+      ],
+      "linked_keg": "4.53.2",
+      "pinned": false,
+      "outdated": false,
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "deprecate_args": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "disable_args": null,
+      "post_install_defined": true,
+      "service": null,
+      "tap_git_head": "1cf579ed539be7645a1945950847abea670046e9",
+      "ruby_source_path": "Formula/y/yq.rb",
+      "ruby_source_checksum": {
+        "sha256": "74cd0b25fdbcef4e6a8e4dc07c2a9bf4c22b947466597b5e4c8a621615623885"
+      }
+    }
+  ],
+  "casks": []
+}

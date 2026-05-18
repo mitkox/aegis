@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `aegis-brew` crate: deterministic Homebrew planning adapter for macOS.
+  `aegis brew install <formula> --plan` produces signable
+  `OperationPlan`s from `brew info --json=v2`, `brew deps
+  --include-build --json=v1`, and `brew install --dry-run`. Apply path
+  is intentionally deferred to v0.4 per AGENTS.md adapter rule 6.
+- `Tool::Brew` variant on `aegis_core::Tool`.
+- Test fixtures under `tests/fixtures/brew/` for poppler, yq, ripgrep,
+  and gh.
+
 ## [0.2.7] - 2026-05-14
 
 ### Added

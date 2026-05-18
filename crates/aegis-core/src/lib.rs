@@ -17,6 +17,7 @@ pub enum Tool {
     Vscode,
     Go,
     Cargo,
+    Brew,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

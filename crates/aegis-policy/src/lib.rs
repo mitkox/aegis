@@ -430,7 +430,7 @@ fn has_strong_non_apt_apply_evidence(plan: &OperationPlan) -> bool {
                 && plan.signature_or_checksum_status.as_deref() != Some("disabled")
         }
         Tool::Apt => true,
-        Tool::Npm | Tool::Pip | Tool::Nuget | Tool::Vscode | Tool::Cargo => false,
+        Tool::Npm | Tool::Pip | Tool::Nuget | Tool::Vscode | Tool::Cargo | Tool::Brew => false,
     }
 }
 

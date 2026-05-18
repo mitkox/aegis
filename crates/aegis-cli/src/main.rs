@@ -62,6 +62,10 @@ enum Commands {
         #[command(subcommand)]
         command: CargoCommand,
     },
+    Brew {
+        #[command(subcommand)]
+        command: BrewCommand,
+    },
     Review {
         plan_file: PathBuf,
     },
@@ -181,6 +185,15 @@ enum CargoCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum BrewCommand {
+    Install {
+        formula: String,
+        #[command(flatten)]
+        args: PlanApplyArgs,
+    },
+}
+
 #[derive(Debug, Args)]
 struct PlanApplyArgs {
     #[arg(long)]
@@ -205,6 +218,7 @@ fn main() -> Result<()> {
         Commands::Vscode { command } => handle_vscode(command),
         Commands::Go { command } => handle_go(command),
         Commands::Cargo { command } => handle_cargo(command),
+        Commands::Brew { command } => handle_brew(command),
         Commands::Review { plan_file } => review(&plan_file),
         Commands::Policy { plan_file, review } => policy(&plan_file, review.as_deref()),
     }
@@ -366,6 +380,19 @@ fn handle_cargo(command: CargoCommand) -> Result<()> {
     }
 }
 
+fn handle_brew(command: BrewCommand) -> Result<()> {
+    match command {
+        BrewCommand::Install { formula, args } => {
+            ensure_plan_or_apply(&args)?;
+            if args.apply {
+                print_apply_unimplemented();
+                return Ok(());
+            }
+            save_plan(aegis_brew::plan_install(&formula)?)
+        }
+    }
+}
+
 fn ensure_plan_or_apply(args: &PlanApplyArgs) -> Result<()> {
     if args.apply {
         if args.plan_id.is_none() {
@@ -521,6 +548,11 @@ fn doctor() -> Result<()> {
             "cargo",
             "optional for Cargo crate metadata",
             command_available("cargo"),
+        ),
+        (
+            "brew",
+            "optional for Homebrew formula metadata",
+            command_available("brew"),
         ),
     ];
     for (name, note, ok) in checks {
